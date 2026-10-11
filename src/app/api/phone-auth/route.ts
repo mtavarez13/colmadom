@@ -2,6 +2,7 @@ import { randomUUID, timingSafeEqual } from 'node:crypto';
 import { NextRequest, NextResponse } from 'next/server';
 import { FieldValue } from 'firebase-admin/firestore';
 import { adminAuth, adminDb } from '@/lib/firebase-admin';
+import { firebaseConfig } from '@/firebase/config';
 
 export const runtime = 'nodejs';
 
@@ -24,6 +25,29 @@ function sameSecret(left: string, right: string): boolean {
 
 function fail(message: string, status = 400) {
   return NextResponse.json({ error: message }, { status });
+}
+
+async function verifyEmailAccountByPhone(phone: string, password: string): Promise<string | null> {
+  const profiles = await adminDb.collection('userProfiles').where('phoneNumber', '==', phone).get();
+  const matches = profiles.docs.filter(item => item.data().email && item.data().isActive !== false);
+  const uids = Array.from(new Set(matches.map(item => item.id)));
+  if (uids.length !== 1) return null;
+  const profile = matches.find(item => item.id === uids[0]);
+  const email = String(profile?.data().email || '').trim().toLowerCase();
+  if (!email) return null;
+  try {
+    const response = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${encodeURIComponent(firebaseConfig.apiKey)}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password, returnSecureToken: true }),
+      cache: 'no-store'
+    });
+    if (!response.ok) return null;
+    const result = await response.json() as { localId?: string };
+    return result.localId === uids[0] ? uids[0] : null;
+  } catch {
+    return null;
+  }
 }
 
 async function caller(request: NextRequest) {
@@ -65,7 +89,12 @@ export async function POST(request: NextRequest) {
         // One-time migration of existing phone accounts. The old profile is never sent to the browser.
         const legacy = await adminDb.collection('userProfiles').where('phoneNumber', '==', phone).get();
         const matching = legacy.docs.filter(item => sameSecret(String(item.data().accessPassword || ''), password));
-        if (matching.length === 0) return wrongPassword();
+        if (matching.length === 0) {
+          const uid = await verifyEmailAccountByPhone(phone, password);
+          if (!uid) return wrongPassword();
+          await attemptRef.delete().catch(() => undefined);
+          return NextResponse.json({ token: await adminAuth.createCustomToken(uid) });
+        }
         if (legacy.docs.some(item => item.data().accessPassword && !sameSecret(String(item.data().accessPassword), password)))
           return fail('Este teléfono tiene registros con claves distintas. Pide al administrador que los revise.', 409);
         matching.sort((a, b) => String(a.data().createdAt || '').localeCompare(String(b.data().createdAt || '')));
@@ -207,3 +236,4 @@ export async function POST(request: NextRequest) {
     return fail('No se pudo procesar la solicitud.', 500);
   }
 }
+
