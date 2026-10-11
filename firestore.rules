@@ -1,0 +1,440 @@
+
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Funciones de utilidad
+    function isSignedIn() { return request.auth != null; }
+    
+    function isPlatformAdmin() {
+      return isSignedIn() && (
+        request.auth.token.email == "admin@colmadom.com" || 
+        request.auth.token.email == "martin.tavarez.gomez@gmail.com" ||
+        request.auth.token.email == "tavarezgomezmartin@gmail.com"
+      );
+    }
+
+    function getUserData() {
+      return get(/databases/$(database)/documents/userProfiles/$(request.auth.uid)).data;
+    }
+
+    function hasSubscriptionAccess(colmadoId) {
+      let store = get(/databases/$(database)/documents/colmados/$(colmadoId)).data;
+      let rootId = store.get('rootColmadoId', colmadoId);
+      let plan = get(/databases/$(database)/documents/colmados/$(rootId)).data;
+      return plan.get('subscriptionStatus', 'Trial') == 'Active' ||
+        (plan.get('subscriptionStatus', 'Trial') == 'Trial' &&
+         (plan.get('trialEndAtMillis', 0) == 0 || plan.get('trialEndAtMillis', 0) > request.time.toMillis()));
+    }
+
+    function isStaffOf(colmadoId) {
+      return isPlatformAdmin() || (
+        isSignedIn() && 
+        exists(/databases/$(database)/documents/userProfiles/$(request.auth.uid)) && 
+        getUserData().get('role', '') != 'Driver' &&
+        getUserData().get('role', '') != 'Contable' &&
+        (getUserData().get('colmadoId', '') == colmadoId ||
+         (getUserData().get('role', '') == 'Admin' &&
+          getUserData().get('allowedColmadoIds', []).hasAny([colmadoId]))) &&
+        hasSubscriptionAccess(colmadoId)
+      );
+    }
+
+    function isStaffIdentityOf(colmadoId) {
+      return isPlatformAdmin() || (
+        isSignedIn() &&
+        exists(/databases/$(database)/documents/userProfiles/$(request.auth.uid)) &&
+        getUserData().get('role', '') != 'Driver' &&
+        getUserData().get('role', '') != 'Contable' &&
+        (getUserData().get('colmadoId', '') == colmadoId ||
+         (getUserData().get('role', '') == 'Admin' && getUserData().get('allowedColmadoIds', []).hasAny([colmadoId])))
+      );
+    }
+
+    function canUseFreeModule(colmadoId, moduleId) {
+      return isStaffIdentityOf(colmadoId) &&
+        (!exists(/databases/$(database)/documents/platformConfig/general) ||
+         get(/databases/$(database)/documents/platformConfig/general).data.get('freeModules', ['independent-audits', 'hr', 'business-market']).hasAny([moduleId]));
+    }
+
+    function isAccountantOf(colmadoId) {
+      return isSignedIn() &&
+        exists(/databases/$(database)/documents/userProfiles/$(request.auth.uid)) &&
+        getUserData().get('role', '') == 'Contable' &&
+        getUserData().get('isActive', true) == true &&
+        (getUserData().get('colmadoId', '') == colmadoId ||
+         getUserData().get('allowedColmadoIds', []).hasAny([colmadoId])) &&
+        hasSubscriptionAccess(colmadoId);
+    }
+
+    function isDriverOf(colmadoId) {
+      return isSignedIn() &&
+        exists(/databases/$(database)/documents/userProfiles/$(request.auth.uid)) &&
+        getUserData().get('role', '') == 'Driver' &&
+        getUserData().get('colmadoId', '') == colmadoId &&
+        hasSubscriptionAccess(colmadoId);
+    }
+
+    function canUseIndependentAudits() {
+      return isSignedIn() && exists(/databases/$(database)/documents/userProfiles/$(request.auth.uid)) &&
+        getUserData().get('role', '') == 'ContableIndependiente' &&
+        getUserData().get('isActive', true) == true &&
+        getUserData().get('allowedModules', []).hasAny(['independent-audits']);
+    }
+
+    // Reglas para Colmados
+    match /colmados/{colmadoId} {
+      allow read, get, list: if true; 
+      allow create: if isPlatformAdmin() || (isSignedIn() &&
+        exists(/databases/$(database)/documents/userProfiles/$(request.auth.uid)) &&
+        getUserData().get('role', '') == 'Admin' &&
+        getUserData().get('colmadoId', '') == '' &&
+        request.resource.data.get('ownerId', '') == request.auth.uid &&
+        request.resource.data.get('rootColmadoId', colmadoId) == colmadoId &&
+        request.resource.data.get('branchLimit', 1) == 1 &&
+        request.resource.data.get('subscriptionStatus', '') == 'Trial' &&
+        request.resource.data.get('trialEndAtMillis', 0) > request.time.toMillis() &&
+        request.resource.data.get('trialEndAtMillis', 0) <= request.time.toMillis() + 21 * 24 * 60 * 60 * 1000);
+      allow update: if isPlatformAdmin() || (isStaffOf(colmadoId) &&
+        request.resource.data.get('branchLimit', 1) == resource.data.get('branchLimit', 1) &&
+        request.resource.data.get('rootColmadoId', colmadoId) == resource.data.get('rootColmadoId', colmadoId) &&
+        request.resource.data.get('subscriptionStatus', '') == resource.data.get('subscriptionStatus', '') &&
+        request.resource.data.get('trialEndDate', '') == resource.data.get('trialEndDate', '') &&
+        request.resource.data.get('trialEndAtMillis', 0) == resource.data.get('trialEndAtMillis', 0) &&
+        request.resource.data.get('monthlyFee', 0) == resource.data.get('monthlyFee', 0) &&
+        request.resource.data.get('billingMonthlyFee', 0) == resource.data.get('billingMonthlyFee', 0) &&
+        request.resource.data.get('billingActivationDate', '') == resource.data.get('billingActivationDate', '') &&
+        request.resource.data.get('billingPaidThroughMonth', '') == resource.data.get('billingPaidThroughMonth', '') &&
+        request.resource.data.get('billingProrationAmount', 0) == resource.data.get('billingProrationAmount', 0) &&
+        request.resource.data.get('billingProrationPending', false) == resource.data.get('billingProrationPending', false) &&
+        request.resource.data.get('billingDueDay', 25) == resource.data.get('billingDueDay', 25) &&
+        request.resource.data.get('billingGraceDays', 5) == resource.data.get('billingGraceDays', 5) &&
+        request.resource.data.get('billingConfigured', false) == resource.data.get('billingConfigured', false) &&
+        request.resource.data.get('paymentReminderEnabled', false) == resource.data.get('paymentReminderEnabled', false) &&
+        request.resource.data.get('paymentReminderMessage', '') == resource.data.get('paymentReminderMessage', '') &&
+        request.resource.data.get('paymentReminderFrequencyMinutes', 60) == resource.data.get('paymentReminderFrequencyMinutes', 60) &&
+        request.resource.data.get('paymentReminderUpdatedAt', '') == resource.data.get('paymentReminderUpdatedAt', '') &&
+        request.resource.data.get('suspensionNoticeEnabled', false) == resource.data.get('suspensionNoticeEnabled', false) &&
+        request.resource.data.get('suspensionNoticeMessage', '') == resource.data.get('suspensionNoticeMessage', '') &&
+        request.resource.data.get('suspensionNoticeUpdatedAt', '') == resource.data.get('suspensionNoticeUpdatedAt', '') &&
+        request.resource.data.get('additionalBranchFee', 0) == resource.data.get('additionalBranchFee', 0) &&
+        request.resource.data.get('fiscalEnabled', false) == resource.data.get('fiscalEnabled', false) &&
+        request.resource.data.get('fiscalMode', 'disabled') == resource.data.get('fiscalMode', 'disabled') &&
+        request.resource.data.get('rnc', '') == resource.data.get('rnc', '') &&
+        request.resource.data.get('legalName', '') == resource.data.get('legalName', '') &&
+        request.resource.data.get('electronicIssuerAuthorized', false) == resource.data.get('electronicIssuerAuthorized', false) &&
+        request.resource.data.get('msellerEnvironment', 'TesteCF') == resource.data.get('msellerEnvironment', 'TesteCF') &&
+        request.resource.data.get('ecf31NextSequence', 1) == resource.data.get('ecf31NextSequence', 1) &&
+        request.resource.data.get('ecf31SequenceEnd', 9999999999) == resource.data.get('ecf31SequenceEnd', 9999999999) &&
+        request.resource.data.get('ecf32NextSequence', 1) == resource.data.get('ecf32NextSequence', 1) &&
+        request.resource.data.get('ecf32SequenceEnd', 9999999999) == resource.data.get('ecf32SequenceEnd', 9999999999) &&
+        request.resource.data.get('ecf33NextSequence', 0) == resource.data.get('ecf33NextSequence', 0) && request.resource.data.get('ecf33SequenceEnd', 0) == resource.data.get('ecf33SequenceEnd', 0) &&
+        request.resource.data.get('ecf34NextSequence', 0) == resource.data.get('ecf34NextSequence', 0) && request.resource.data.get('ecf34SequenceEnd', 0) == resource.data.get('ecf34SequenceEnd', 0) &&
+        request.resource.data.get('ecf41NextSequence', 0) == resource.data.get('ecf41NextSequence', 0) && request.resource.data.get('ecf41SequenceEnd', 0) == resource.data.get('ecf41SequenceEnd', 0) &&
+        request.resource.data.get('ecf43NextSequence', 0) == resource.data.get('ecf43NextSequence', 0) && request.resource.data.get('ecf43SequenceEnd', 0) == resource.data.get('ecf43SequenceEnd', 0) &&
+        request.resource.data.get('ecf44NextSequence', 0) == resource.data.get('ecf44NextSequence', 0) && request.resource.data.get('ecf44SequenceEnd', 0) == resource.data.get('ecf44SequenceEnd', 0) &&
+        request.resource.data.get('ecf45NextSequence', 0) == resource.data.get('ecf45NextSequence', 0) && request.resource.data.get('ecf45SequenceEnd', 0) == resource.data.get('ecf45SequenceEnd', 0) &&
+        request.resource.data.get('ecf46NextSequence', 0) == resource.data.get('ecf46NextSequence', 0) && request.resource.data.get('ecf46SequenceEnd', 0) == resource.data.get('ecf46SequenceEnd', 0) &&
+        request.resource.data.get('ecf47NextSequence', 0) == resource.data.get('ecf47NextSequence', 0) && request.resource.data.get('ecf47SequenceEnd', 0) == resource.data.get('ecf47SequenceEnd', 0) &&
+        request.resource.data.get('ecfSequenceExpiry', '') == resource.data.get('ecfSequenceExpiry', '') &&
+        (request.resource.data.get('masterKey', '') == resource.data.get('masterKey', '') || getUserData().get('role', '') == 'Admin') &&
+        request.resource.data.get('printerPaperWidth', '80mm') == resource.data.get('printerPaperWidth', '80mm'));
+      allow delete: if isPlatformAdmin();
+
+      // Productos del inventario
+      match /products/{productId} {
+        allow read, get, list: if true;
+        allow create, delete: if isStaffOf(colmadoId);
+        allow update: if isStaffOf(colmadoId) || (isDriverOf(colmadoId) &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['quantityInStock']) &&
+          request.resource.data.get('quantityInStock', 0) <= resource.data.get('quantityInStock', 0));
+      }
+
+      // Órdenes de pedido
+      match /orders/{orderId} {
+        // Public catalog now submits through the validated server route.
+        allow create: if isStaffOf(colmadoId);
+        allow read, get, list: if isStaffOf(colmadoId) || (isDriverOf(colmadoId) &&
+          resource.data.get('assignedDriverId', '') == getUserData().get('driverId', 'NO_DRIVER'));
+        allow update: if isStaffOf(colmadoId) || (isDriverOf(colmadoId) &&
+          resource.data.get('assignedDriverId', '') == getUserData().get('driverId', 'NO_DRIVER') &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'acceptedAt', 'deliveredAt', 'assignedDriverId', 'updatedAt']) &&
+          ((resource.data.get('status', '') == 'Assigned' && request.resource.data.get('status', '') == 'Accepted') ||
+           (resource.data.get('status', '') == 'Assigned' && request.resource.data.get('status', '') == 'Pending' && request.resource.data.get('assignedDriverId', 'INVALID') == null) ||
+           (resource.data.get('status', '') == 'Accepted' && request.resource.data.get('status', '') == 'Delivered')));
+        allow delete: if isPlatformAdmin() || (isStaffOf(colmadoId) && getUserData().get('role', 'User') in ["Admin", "Supervisor"]);
+        
+        match /items/{itemId} { 
+          allow read: if isStaffOf(colmadoId) || (isDriverOf(colmadoId) &&
+            get(/databases/$(database)/documents/colmados/$(colmadoId)/orders/$(orderId)).data.get('assignedDriverId', '') == getUserData().get('driverId', 'NO_DRIVER'));
+          allow write: if isStaffOf(colmadoId); 
+        }
+      }
+
+      // Transacciones de venta y abonos
+      match /transactions/{txId} {
+        allow read, list: if isStaffOf(colmadoId) || isAccountantOf(colmadoId) || (isDriverOf(colmadoId) &&
+          resource.data.get('driverUid', '') == request.auth.uid);
+        allow create: if isPlatformAdmin() || (isStaffOf(colmadoId) &&
+          (request.resource.data.get('discountPercent', 0) == 0 || getUserData().get('role', '') == 'Admin')) || (isDriverOf(colmadoId) &&
+          request.resource.data.get('driverUid', '') == request.auth.uid &&
+          request.resource.data.get('driverId', '') == getUserData().get('driverId', 'NO_DRIVER') &&
+          request.resource.data.get('transactionType', '') == 'OrderDelivery' &&
+          request.resource.data.get('cashSettlementStatus', '') == 'Held' &&
+          request.resource.data.get('cashRegisterSessionId', '') == 'delivery_pending');
+        allow update, delete: if isPlatformAdmin(); 
+      }
+
+      // Sesiones de caja (Cuadres)
+      match /cashRegisterSessions/{sessionId} {
+        allow read: if isStaffOf(colmadoId) || isAccountantOf(colmadoId);
+        allow write: if isStaffOf(colmadoId);
+      }
+
+      // Entradas contables (Gastos/Nómina)
+      match /bookkeepingEntries/{entryId} {
+        allow read: if isStaffOf(colmadoId) || isAccountantOf(colmadoId);
+        allow create: if isStaffOf(colmadoId) || (isAccountantOf(colmadoId) &&
+          request.resource.data.get('createdBy', '') == request.auth.uid &&
+          request.resource.data.get('createdByRole', '') == 'Contable');
+        allow update, delete: if isStaffOf(colmadoId);
+      }
+
+      // Expedientes completos creados por el contador: inventario inicial y seguimientos.
+      match /accountingInventoryAudits/{auditId} {
+        allow read, create: if isStaffOf(colmadoId) || isAccountantOf(colmadoId);
+        allow update, delete: if isPlatformAdmin() || (isStaffOf(colmadoId) && getUserData().get('role', '') == 'Admin');
+        match /items/{itemId} {
+          allow read, create: if isStaffOf(colmadoId) || isAccountantOf(colmadoId);
+          allow update, delete: if false;
+        }
+      }
+
+      // La participación en beneficios solo la puede configurar el dueño.
+      match /employees/{employeeId} {
+        allow read: if isStaffOf(colmadoId) || canUseFreeModule(colmadoId, 'hr') || isAccountantOf(colmadoId);
+        allow create: if (isStaffOf(colmadoId) || canUseFreeModule(colmadoId, 'hr')) && (
+          isPlatformAdmin() || getUserData().get('role', '') == 'Admin' ||
+          !request.resource.data.keys().hasAny(['profitSharePercent', 'profitShareUpdatedAt'])
+        ) && (request.resource.data.get('profitSharePercent', null) == null ||
+          (request.resource.data.get('profitSharePercent', null) is number &&
+           request.resource.data.get('profitSharePercent', null) >= 0 &&
+           request.resource.data.get('profitSharePercent', null) <= 100));
+        allow update: if (isStaffOf(colmadoId) || canUseFreeModule(colmadoId, 'hr')) && (
+          isPlatformAdmin() || getUserData().get('role', '') == 'Admin' ||
+          !request.resource.data.diff(resource.data).affectedKeys().hasAny(['profitSharePercent', 'profitShareUpdatedAt'])
+        ) && (request.resource.data.get('profitSharePercent', null) == null ||
+          (request.resource.data.get('profitSharePercent', null) is number &&
+           request.resource.data.get('profitSharePercent', null) >= 0 &&
+           request.resource.data.get('profitSharePercent', null) <= 100));
+        allow delete: if (isStaffOf(colmadoId) || canUseFreeModule(colmadoId, 'hr')) && (isPlatformAdmin() || getUserData().get('role', '') == 'Admin');
+        match /incidents/{incidentId} {
+          allow read, write: if isStaffOf(colmadoId) || canUseFreeModule(colmadoId, 'hr');
+        }
+      }
+
+      // Clientes (Libretas de Fiaos)
+      match /customers/{customerId} {
+        allow read, create, delete: if isStaffOf(colmadoId);
+        allow update: if isPlatformAdmin() || (isStaffOf(colmadoId) && (
+          getUserData().get('role', '') == 'Admin' ||
+          !request.resource.data.diff(resource.data).affectedKeys().hasAny([
+            'firstName', 'lastName', 'phoneNumber', 'address', 'creditLimit'
+          ])
+        ));
+        match /messages/{msgId} { allow read, write: if isStaffOf(colmadoId); }
+      }
+
+      match /fiscalCustomers/{customerId} {
+        allow read, create, update: if isStaffOf(colmadoId);
+        allow delete: if isPlatformAdmin() || (isStaffOf(colmadoId) && getUserData().get('role', '') == 'Admin');
+      }
+
+      // Drivers (Repartidores)
+      match /drivers/{driverId} {
+        allow read: if true;
+        allow write: if isStaffOf(colmadoId) || (isDriverOf(colmadoId) &&
+          getUserData().get('driverId', 'NO_DRIVER') == driverId &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isAvailable', 'updatedAt', 'currentLatitude', 'currentLongitude', 'lastLocationUpdate']));
+      }
+
+      // Solicitudes de Impresión (Kiosko)
+      match /printRequests/{requestId} {
+        allow read, write: if isStaffOf(colmadoId);
+        allow create: if isAccountantOf(colmadoId);
+      }
+
+      match /inventoryAuditReports/{reportId} {
+        allow read, create: if isStaffOf(colmadoId) || isAccountantOf(colmadoId);
+        allow update, delete: if isPlatformAdmin() || (isStaffOf(colmadoId) && getUserData().get('role', '') == 'Admin');
+      }
+
+      match /suppliers/{supplierId} {
+        allow read, write: if isStaffOf(colmadoId);
+      }
+
+      match /barSessions/{sessionId} {
+        allow read, write: if isStaffOf(colmadoId);
+      }
+
+      match /{allSubcollections=**} {
+        allow read, get, list: if isStaffOf(colmadoId);
+      }
+    }
+
+    match /mobileDevices/{id} { allow read, write: if false; }
+    match /mobileOrderOutbox/{id} { allow read, write: if false;
+      match /{document=**} { allow read, write: if false; }
+    }
+    match /catalogRateLimits/{id} { allow read, write: if false; }
+
+    // Clientes externos administrados por contadores independientes.
+    match /independentInventoryBusinesses/{businessId} {
+      allow create: if canUseIndependentAudits() && request.resource.data.get('ownerUid', '') == request.auth.uid;
+      allow read, update, delete: if canUseIndependentAudits() && resource.data.get('ownerUid', '') == request.auth.uid;
+      match /products/{productId} {
+        allow read, update, delete: if canUseIndependentAudits() &&
+          get(/databases/$(database)/documents/independentInventoryBusinesses/$(businessId)).data.get('ownerUid', '') == request.auth.uid &&
+          resource.data.get('ownerUid', '') == request.auth.uid;
+        allow create: if canUseIndependentAudits() &&
+          get(/databases/$(database)/documents/independentInventoryBusinesses/$(businessId)).data.get('ownerUid', '') == request.auth.uid &&
+          request.resource.data.get('ownerUid', '') == request.auth.uid;
+      }
+      match /auditHistory/{auditId} {
+        allow read: if canUseIndependentAudits() &&
+          get(/databases/$(database)/documents/independentInventoryBusinesses/$(businessId)).data.get('ownerUid', '') == request.auth.uid;
+        allow create: if canUseIndependentAudits() &&
+          get(/databases/$(database)/documents/independentInventoryBusinesses/$(businessId)).data.get('ownerUid', '') == request.auth.uid &&
+          request.resource.data.get('ownerUid', '') == request.auth.uid;
+        allow update, delete: if false;
+      }
+      match /auditSessions/{auditId} {
+        allow read: if canUseIndependentAudits() &&
+          get(/databases/$(database)/documents/independentInventoryBusinesses/$(businessId)).data.get('ownerUid', '') == request.auth.uid &&
+          resource.data.get('ownerUid', '') == request.auth.uid;
+        allow create: if canUseIndependentAudits() &&
+          get(/databases/$(database)/documents/independentInventoryBusinesses/$(businessId)).data.get('ownerUid', '') == request.auth.uid &&
+          request.resource.data.get('ownerUid', request.auth.uid) == request.auth.uid;
+        allow update, delete: if false;
+      }
+      match /bookkeepingEntries/{entryId} {
+        allow read: if canUseIndependentAudits() &&
+          get(/databases/$(database)/documents/independentInventoryBusinesses/$(businessId)).data.get('ownerUid', '') == request.auth.uid &&
+          resource.data.get('ownerUid', '') == request.auth.uid;
+        allow create: if canUseIndependentAudits() &&
+          get(/databases/$(database)/documents/independentInventoryBusinesses/$(businessId)).data.get('ownerUid', '') == request.auth.uid &&
+          request.resource.data.get('ownerUid', request.auth.uid) == request.auth.uid;
+        allow update, delete: if canUseIndependentAudits() && resource.data.get('ownerUid', '') == request.auth.uid;
+      }
+    }
+
+    // Reglas para Perfiles de Usuario
+    match /userProfiles/{uid} {
+      allow read, get, list: if isPlatformAdmin() || (
+        isSignedIn() && (
+          (request.auth.uid == uid && (resource == null || resource.data.get('accessPassword', '') == '' || resource.data.get('role', '') == 'Admin')) ||
+          (request.auth.token.email != null && resource.data.get('email', '') == request.auth.token.email) ||
+          (exists(/databases/$(database)/documents/userProfiles/$(request.auth.uid)) &&
+           getUserData().get('role', '') == 'Admin' &&
+           (resource.data.get('colmadoId', '') == getUserData().get('colmadoId', 'NO_MATCH') ||
+            getUserData().get('allowedColmadoIds', []).hasAny([resource.data.get('colmadoId', '')])))
+        )
+      );
+      allow create: if isPlatformAdmin() || (
+        isSignedIn() && request.auth.uid == uid &&
+        request.auth.token.firebase.sign_in_provider in ['google.com', 'password'] &&
+        request.auth.token.email_verified == true &&
+        request.resource.data.keys().hasOnly(['id', 'firstName', 'lastName', 'email', 'role', 'roleCode', 'isActive', 'registrationMethod', 'subscriptionStatus', 'createdAt', 'updatedAt', 'lastLoginAt']) &&
+        request.resource.data.get('id', '') == uid &&
+        request.resource.data.get('email', '') == request.auth.token.email &&
+        request.resource.data.get('role', '') == 'Admin' &&
+        request.resource.data.get('isActive', false) == true
+      ) || (
+        isSignedIn() && exists(/databases/$(database)/documents/userProfiles/$(request.auth.uid)) &&
+        getUserData().get('role', '') == 'Admin' &&
+        request.resource.data.get('colmadoId', '') == getUserData().get('colmadoId', 'NO_MATCH') &&
+        request.resource.data.get('role', '') in ['Supervisor', 'Cajero', 'Driver', 'Contable'] &&
+        !request.resource.data.keys().hasAny(['accessPassword'])
+      );
+      allow update: if isPlatformAdmin() 
+                    || (isSignedIn() && request.auth.uid == uid &&
+                        request.resource.data.get('colmadoId', '') in resource.data.get('allowedColmadoIds', []) &&
+                        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['colmadoId', 'updatedAt']))
+                    || (isSignedIn() && request.auth.uid == uid &&
+                        request.resource.data.get('role', '') == resource.data.get('role', '') &&
+                        request.resource.data.get('colmadoId', '') == resource.data.get('colmadoId', '') &&
+                        request.resource.data.get('allowedModules', []) == resource.data.get('allowedModules', []) &&
+                        request.resource.data.get('allowedColmadoIds', []) == resource.data.get('allowedColmadoIds', []) &&
+                        request.resource.data.get('accessPassword', '') == resource.data.get('accessPassword', '') &&
+                        request.resource.data.get('isActive', true) == resource.data.get('isActive', true))
+                    || (isSignedIn() && request.auth.uid == uid &&
+                        resource.data.get('role', '') == 'Admin' &&
+                        resource.data.get('colmadoId', '') == '' &&
+                        request.resource.data.get('role', '') == 'Admin' &&
+                        request.resource.data.get('colmadoId', '') != '' &&
+                        request.resource.data.get('allowedColmadoIds', []) == [] &&
+                        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['colmadoId', 'rootColmadoId', 'firstName', 'lastName', 'email', 'role', 'roleCode', 'isActive', 'allowedModules', 'subscriptionStatus', 'phoneNumber', 'province', 'municipality', 'businessName', 'trialStartDate', 'trialEndDate', 'updatedAt']))
+                    || (
+                         isSignedIn() && 
+                         exists(/databases/$(database)/documents/userProfiles/$(request.auth.uid)) && 
+                         getUserData().get('role', 'User') == "Admin" &&
+                         (resource.data.get('colmadoId', 'MISSING') == getUserData().get('colmadoId', 'NO_MATCH') ||
+                          getUserData().get('allowedColmadoIds', []).hasAny([resource.data.get('colmadoId', '')])) &&
+                         resource.data.get('role', 'User') in ['Supervisor', 'Cajero', 'Driver', 'Contable'] &&
+                         request.resource.data.get('role', 'User') in ['Supervisor', 'Cajero', 'Driver', 'Contable'] &&
+                         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['firstName', 'phoneNumber', 'role', 'allowedModules', 'allowedColmadoIds', 'isActive', 'updatedAt'])
+                       );
+      allow delete: if isPlatformAdmin()
+                    || (isSignedIn() && request.auth.uid == uid && resource.data.get('role', '') != 'Admin')
+                    || (
+                         isSignedIn() && 
+                         exists(/databases/$(database)/documents/userProfiles/$(request.auth.uid)) && 
+                         getUserData().get('role', 'User') == "Admin" && 
+                         resource.data.get('colmadoId', '') == getUserData().get('colmadoId', 'NO_MATCH')
+                       );
+    }
+
+    match /phoneCredentials/{phone} {
+      allow read, get, list: if isPlatformAdmin() || (
+        isSignedIn() && exists(/databases/$(database)/documents/userProfiles/$(request.auth.uid)) &&
+        getUserData().get('role', '') == 'Admin' &&
+        (resource.data.get('colmadoId', '') == getUserData().get('colmadoId', 'NO_MATCH') ||
+         getUserData().get('allowedColmadoIds', []).hasAny([resource.data.get('colmadoId', '')]))
+      );
+      allow create: if isSignedIn() &&
+        exists(/databases/$(database)/documents/userProfiles/$(request.auth.uid)) &&
+        getUserData().get('role', '') == 'Admin' &&
+        request.resource.data.keys().hasOnly(['phoneNumber', 'accessPassword', 'uid', 'colmadoId', 'createdAt']) &&
+        request.resource.data.get('phoneNumber', '') == phone &&
+        request.resource.data.get('colmadoId', '') == getUserData().get('colmadoId', 'NO_MATCH') &&
+        getAfter(/databases/$(database)/documents/userProfiles/$(request.resource.data.get('uid', 'INVALID'))).data.get('role', '') == 'Driver' &&
+        getAfter(/databases/$(database)/documents/userProfiles/$(request.resource.data.get('uid', 'INVALID'))).data.get('colmadoId', '') == request.resource.data.get('colmadoId', '');
+      allow update, delete: if false;
+    }
+
+    match /sharedCatalogImages/{barcode} {
+      allow read: if true;
+      allow create, update: if isPlatformAdmin() || (
+        isSignedIn() && exists(/databases/$(database)/documents/userProfiles/$(request.auth.uid)) &&
+        getUserData().get('isActive', true) == true &&
+        (getUserData().get('role', '') in ['Admin', 'Supervisor'] ||
+         getUserData().get('allowedModules', []).hasAny(['inventory'])) &&
+        request.resource.data.get('barcode', '') == barcode &&
+        request.resource.data.keys().hasOnly(['barcode', 'imageUrl', 'updatedAt'])
+      );
+      allow delete: if isPlatformAdmin();
+    }
+
+    // Colecciones globales
+    match /platformConfig/{configId} {
+      allow read: if configId != 'whatsappMeta' || isPlatformAdmin();
+      allow write: if isPlatformAdmin();
+    }
+
+    // Backup para cualquier otra ruta: solo admins de plataforma
+    match /{document=**} {
+      allow read, write: if isPlatformAdmin();
+    }
+  }
+}
+

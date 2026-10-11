@@ -1,0 +1,15 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { checkoutSchema, buildPosSale, posRole, branchAllowed } from '../src/lib/mobile-pos-core';
+const product = {name:'Arroz',salePrice:50,quantityInStock:10};
+const input = (overrides = {}) => checkoutSchema.parse({storeId:'s1',requestId:'d433ebc1-1594-453d-aa88-d6c1ee32a3b2',items:[{productId:'p1',quantity:'2'}],expectedTotal:'100',paymentMethod:'Efectivo',cashReceived:'150',...overrides});
+const products = (p = product) => new Map([['p1',p]]);
+test('cash total and change from stored price',()=>{const s=buildPosSale(input(),products());assert.equal(s.totalAmount,100);assert.equal(s.changeGiven,50);assert.equal(s.stock.get('p1'),2);});
+test('rejects fabricated price and unsupported method',()=>{assert.throws(()=>input({totalAmount:1}));assert.throws(()=>input({paymentMethod:'Fiado'}));});
+test('rejects zero, negative, excessive and fractional unit quantities',()=>{for(const quantity of ['0','-1','1.2','1000001']) assert.throws(()=>buildPosSale(input({items:[{productId:'p1',quantity}]}),products()));});
+test('duplicate lines aggregate stock before writes',()=>assert.throws(()=>buildPosSale(input({items:[{productId:'p1',quantity:'6'},{productId:'p1',quantity:'6'}]}),products()),/Existencias/));
+test('fractional amount preserves exact paid amount and stock ratio',()=>{const s=buildPosSale(input({items:[{productId:'p1',amountInDop:'10.01'}],expectedTotal:'10.01'}),products({...product,isBreakdownAllowed:true} as any));assert.equal(s.totalAmount,10.01);assert.equal(s.stock.get('p1'),10.01/50);});
+test('price drift, insufficient cash and missing card reference are rejected',()=>{assert.throws(()=>buildPosSale(input({expectedTotal:'99'}),products()),/precio/);assert.throws(()=>buildPosSale(input({cashReceived:'99'}),products()),/efectivo/);assert.throws(()=>buildPosSale(input({paymentMethod:'Tarjeta'}),products()),/referencia/);});
+test('card records external payment without cash change',()=>{const s=buildPosSale(input({paymentMethod:'Tarjeta',paymentRef:'external123'}),products());assert.equal(s.paidAmount,100);assert.equal(s.changeGiven,0);});
+test('combos consume components and detect competing demand',()=>{const p=new Map<string,any>([['p1',{...product,isCombo:true,comboItems:[{id:'p2',quantity:3}]}],['p2',{...product,quantityInStock:6}]]);const s=buildPosSale(input(),p);assert.equal(s.stock.get('p2'),6);assert.equal(s.stock.has('p1'),false);p.get('p2').quantityInStock=5;assert.throws(()=>buildPosSale(input(),p),/Existencias/);});
+test('roles and branch constraints',()=>{assert.equal(posRole({role:'Driver',allowedModules:['pos']}),false);assert.equal(posRole({role:'Admin',isActive:false}),false);assert.equal(posRole({role:'Cashier',allowedModules:['pos']}),true);assert.equal(branchAllowed({role:'Cashier',colmadoId:'a',allowedColmadoIds:['b']},'b'),false);assert.equal(branchAllowed({role:'Admin',colmadoId:'a',allowedColmadoIds:['b']},'b'),true);});

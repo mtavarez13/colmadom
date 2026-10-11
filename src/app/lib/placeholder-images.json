@@ -1,0 +1,23 @@
+
+{
+  "placeholderImages": [
+    {
+      "id": "colmado-hero",
+      "description": "Un colmado dominicano moderno y colorido con letreros vibrantes y productos frescos",
+      "imageUrl": "https://picsum.photos/seed/dominican-colmado-hero/1200/800",
+      "imageHint": "dominican colmado"
+    },
+    {
+      "id": "delivery-city",
+      "description": "Delivery person on a motorcycle in a vibrant city environment",
+      "imageUrl": "https://picsum.photos/seed/delivery-city/800/600",
+      "imageHint": "delivery motorcycle"
+    },
+    {
+      "id": "product-grocery",
+      "description": "Various grocery items on a shelf",
+      "imageUrl": "https://picsum.photos/seed/grocery/400/400",
+      "imageHint": "grocery products"
+    }
+  ]
+}

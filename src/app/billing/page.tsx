@@ -1,0 +1,45 @@
+"use client";
+import { useCallback,useEffect,useMemo,useRef,useState } from "react";
+import Script from "next/script";
+import { CheckCircle2,Clipboard,Loader2,Upload } from "lucide-react";
+import { useUser } from "@/firebase";
+import { Button } from "@/components/ui/button";
+import { Card,CardContent,CardDescription,CardHeader,CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Select,SelectContent,SelectItem,SelectTrigger,SelectValue } from "@/components/ui/select";
+import { useToast } from "@/hooks/use-toast";
+declare global{interface Window{paypal?:any}}
+export default function BillingPage(){
+ const {user}=useUser(),{toast}=useToast(),[data,setData]=useState<any>(null),[planId,setPlanId]=useState("mrr-custom"),[months,setMonths]=useState(1),[accountId,setAccountId]=useState(""),[file,setFile]=useState<File|null>(null),[busy,setBusy]=useState(false),[paid,setPaid]=useState(false);
+ const paypalRef=useRef<HTMLDivElement>(null),rendered=useRef(false);
+ const token=useCallback(async()=>user?.getIdToken(),[user]);
+ useEffect(()=>{if(!user)return;void(async()=>{const r=await fetch("/api/billing/config",{headers:{Authorization:"Bearer "+await token()}});const j=await r.json();if(r.ok){setData(j);setPlanId(j.store?.planId||j.plans?.[0]?.id||"standard");setAccountId(j.bankAccounts?.find((a:any)=>a.isDefault)?.id||j.bankAccounts?.[0]?.id||"");}})();},[user,token]);
+ const plan:any=useMemo(()=>({id:'mrr-custom',name:'Cuota mensual personalizada',price:Number(data?.billing?.fee||data?.store?.monthlyFee||0),periodDays:30,paypalPrice:Number(data?.store?.billingPaypalMonthlyPrice||0),paypalCurrency:String(data?.store?.billingPaypalCurrency||'USD')}),[data]);
+ const account=useMemo(()=>data?.bankAccounts?.find((a:any)=>a.id===accountId),[data,accountId]),amount=Number(plan.price||0)*months+Number(data?.billing?.proration||0);
+ const copy=async(text:string)=>{await navigator.clipboard.writeText(text);toast({title:"Datos copiados"});};
+ const renderPayPal=useCallback(()=>{if(rendered.current||!window.paypal||!paypalRef.current||!planId)return;rendered.current=true;window.paypal.Buttons({
+  createOrder:async()=>{const r=await fetch("/api/billing/paypal/create-order",{method:"POST",headers:{"Content-Type":"application/json",Authorization:"Bearer "+await token()},body:JSON.stringify({planId,months})});const j=await r.json();if(!r.ok)throw new Error(j.error);return j.id;},
+  onApprove:async(d:any)=>{const r=await fetch("/api/billing/paypal/capture-order",{method:"POST",headers:{"Content-Type":"application/json",Authorization:"Bearer "+await token()},body:JSON.stringify({orderId:d.orderID})});const j=await r.json();if(!r.ok)throw new Error(j.error);setPaid(true);toast({title:"Pago recibido",description:"Tu suscripción fue activada."});},
+  onError:(error:any)=>toast({variant:"destructive",title:"PayPal",description:error?.message||"No se completó el pago."})
+ }).render(paypalRef.current);},[planId,toast,token]);
+ useEffect(()=>{rendered.current=false;if(paypalRef.current)paypalRef.current.innerHTML="";renderPayPal();},[renderPayPal]);
+ async function upload(){if(!file||!accountId)return toast({variant:"destructive",title:"Completa el comprobante y la cuenta."});setBusy(true);try{const form=new FormData();form.set("file",file);form.set("amount",String(amount));form.set("months",String(months));form.set("planId",planId);form.set("bankAccountId",accountId);const r=await fetch("/api/billing/transfer-receipts",{method:"POST",headers:{Authorization:"Bearer "+await token()},body:form}),j=await r.json();if(!r.ok)throw new Error(j.error);toast({title:"Comprobante recibido",description:`Pago de ${months} mes(es), pendiente de revisión.`});setFile(null);}catch(error:any){toast({variant:"destructive",title:"No se pudo enviar",description:error.message});}finally{setBusy(false);}}
+ if(!data)return <div className="min-h-svh grid place-items-center"><Loader2 className="animate-spin"/></div>;
+ const transferText=account?["BANCO: "+account.bank,"TIPO: "+account.accountType,"CUENTA: "+account.accountNumber,"TITULAR: "+account.holder,"MONTO: RD$"+amount.toLocaleString()].join("\n"):"";
+ return <main className="max-w-5xl mx-auto p-4 md:p-8 space-y-6"><header><h1 className="text-3xl font-black text-primary">Elige cómo pagar</h1><p className="text-muted-foreground">Selecciona tu plan y completa el pago de forma segura.</p></header>
+ {paid&&<div className="rounded-2xl bg-emerald-50 text-emerald-800 p-5 flex gap-3"><CheckCircle2/><strong>Pago recibido. Suscripción actualizada.</strong></div>}
+ <Card><CardHeader><CardTitle>Cuota MRR del colmado</CardTitle><CardDescription>El aviso comienza el día 25 y la fecha límite es el día {data.billing?.deadlineDay||30}. Los meses pagados por adelantado no generan avisos.</CardDescription></CardHeader><CardContent className="grid md:grid-cols-3 gap-4"><div><Label>Cuota mensual</Label><div className="h-10 flex items-center font-black text-xl">RD${Number(plan.price).toLocaleString()}</div></div><div><Label>Meses que deseas pagar</Label><Input type="number" min="1" max="24" value={months} onChange={e=>setMonths(Math.max(1,Math.min(24,Number(e.target.value)||1)))}/></div><div><Label>Total a pagar</Label><div className="h-10 flex items-center font-black text-2xl text-primary">RD${amount.toLocaleString()}</div></div>{data.billing?.proration>0&&<p className="md:col-span-3 text-sm text-orange-700">Incluye prorrateo inicial de RD${Number(data.billing.proration).toLocaleString()} desde la activación hasta el próximo corte.</p>}<p className="md:col-span-3 text-sm">Cobertura actual: <b>{data.billing?.paidThroughMonth||'Sin meses pagados'}</b></p></CardContent></Card>
+ <div className="grid md:grid-cols-2 gap-5">
+ {data.paymentMethods?.bankTransfer!==false&&<Card><CardHeader><CardTitle>Transferencia bancaria</CardTitle><CardDescription>Transfiere y adjunta la evidencia.</CardDescription></CardHeader><CardContent className="space-y-4">
+  <Select value={accountId} onValueChange={setAccountId}><SelectTrigger><SelectValue placeholder="Cuenta bancaria"/></SelectTrigger><SelectContent>{data.bankAccounts.map((a:any)=><SelectItem key={a.id} value={a.id}>{a.bank+" · "+a.accountNumber}</SelectItem>)}</SelectContent></Select>
+  {account&&<div className="rounded-xl bg-primary text-white p-4 text-sm space-y-1"><p><b>BANCO:</b> {account.bank}</p><p><b>TIPO:</b> {account.accountType}</p><p className="flex items-center justify-between"><span><b>CUENTA:</b> {account.accountNumber}</span><button onClick={()=>copy(account.accountNumber)}><Clipboard className="h-4 w-4"/></button></p><p><b>TITULAR:</b> {account.holder}</p><p><b>MONTO:</b> {"RD$"+amount.toLocaleString()}</p></div>}
+  <Button variant="outline" className="w-full" disabled={!account} onClick={()=>copy(transferText)}><Clipboard className="mr-2 h-4 w-4"/>COPIAR DATOS DE TRANSFERENCIA</Button>
+  <div><Label>Subir comprobante (imagen o PDF, máximo 5 MB)</Label><Input type="file" accept="image/jpeg,image/png,image/webp,application/pdf" onChange={e=>setFile(e.target.files?.[0]||null)}/></div>
+  <Button className="w-full" onClick={upload} disabled={busy||!file}>{busy?<Loader2 className="animate-spin"/>:<Upload className="mr-2 h-4 w-4"/>}SUBIR COMPROBANTE</Button>
+ </CardContent></Card>}
+ {data.paymentMethods?.paypal&&<Card><CardHeader><CardTitle>PayPal</CardTitle><CardDescription>{plan.name+" · "+(plan.periodDays||30)+" días · "+(plan.paypalPrice||plan.price)+" "+(plan.paypalCurrency||"USD")}</CardDescription></CardHeader><CardContent><div ref={paypalRef}/></CardContent></Card>}
+ </div>
+ {data.paymentMethods?.paypal&&process.env.NEXT_PUBLIC_PAYPAL_CLIENT_ID&&<Script src={"https://www.paypal.com/sdk/js?client-id="+encodeURIComponent(process.env.NEXT_PUBLIC_PAYPAL_CLIENT_ID)+"&currency=USD&components=buttons"} onLoad={renderPayPal}/>}
+ </main>;
+}

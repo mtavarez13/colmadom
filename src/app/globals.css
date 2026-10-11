@@ -1,0 +1,193 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 270 20% 98%;
+    --foreground: 0 0% 5%;
+    --card: 0 0% 100%;
+    --card-foreground: 225 30% 10%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 225 30% 10%;
+    --primary: 270 78% 38%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 270 25% 92%;
+    --secondary-foreground: 270 70% 25%;
+    --muted: 270 10% 92%;
+    --muted-foreground: 270 8% 38%;
+    --accent: 285 88% 58%;
+    --accent-foreground: 0 0% 100%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 225 15% 85%;
+    --input: 225 15% 85%;
+    --ring: 270 78% 45%;
+    --radius: 1rem;
+
+    --sidebar-background: 0 0% 100%;
+    --sidebar-foreground: 0 0% 5%;
+    --sidebar-primary: 270 78% 38%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 225 15% 96%;
+    --sidebar-accent-foreground: 270 78% 38%;
+    --sidebar-border: 225 15% 85%;
+    --sidebar-ring: 225 70% 45%;
+  }
+
+  .dark {
+    --background: 225 30% 5%;
+    --foreground: 225 10% 98%;
+    --card: 225 30% 8%;
+    --card-foreground: 225 10% 98%;
+    --popover: 225 30% 8%;
+    --popover-foreground: 225 10% 98%;
+    --primary: 275 82% 62%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 225 20% 15%;
+    --secondary-foreground: 225 10% 98%;
+    --muted: 225 20% 15%;
+    --muted-foreground: 225 10% 65%;
+    --accent: 292 90% 64%;
+    --accent-foreground: 0 0% 100%;
+    --destructive: 0 62% 30%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 225 20% 20%;
+    --input: 225 20% 20%;
+    --ring: 275 82% 62%;
+
+    --sidebar-background: 225 30% 8%;
+    --sidebar-foreground: 225 10% 98%;
+    --sidebar-primary: 275 82% 62%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 225 20% 15%;
+    --sidebar-accent-foreground: 0 0% 100%;
+    --sidebar-border: 225 20% 20%;
+    --sidebar-ring: 225 70% 45%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground font-body;
+  }
+}
+
+@keyframes colmadom-float { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-14px)} }
+@keyframes colmadom-glow { 0%,100%{opacity:.35;transform:scale(1)} 50%{opacity:.7;transform:scale(1.08)} }
+.animate-colmadom-float { animation: colmadom-float 5s ease-in-out infinite; }
+.animate-colmadom-glow { animation: colmadom-glow 4s ease-in-out infinite; }
+
+/* GLOBAL KIOSKO PRINT STYLES */
+@media print {
+  body {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+    background: white !important;
+  }
+
+  body * {
+    visibility: hidden !important;
+  }
+  
+  /* AREAS DE IMPRESION PERMITIDAS */
+  #kiosko-global-print-area,
+  #kiosko-global-print-area *,
+  .pos-receipt-print,
+  .pos-receipt-print *,
+  .bar-receipt-print,
+  .bar-receipt-print *,
+  .receipt-print-area,
+  .receipt-print-area *,
+  .closing-print-local,
+  .closing-print-local *,
+  .inventory-print-list,
+  .inventory-print-list *,
+  .print-area-sellers,
+  .print-area-sellers *,
+  .print-area-audit,
+  .print-area-audit *,
+  .summary-print-area,
+  .summary-print-area *,
+  .summary-expense-report,
+  .summary-expense-report *,
+  .debts-global-report,
+  .debts-global-report *,
+  .customer-statement-report,
+  .customer-statement-report *,
+  .contract-print-area,
+  .contract-print-area *,
+  .liquidation-print-area,
+  .liquidation-print-area *,
+  .incident-print-area,
+  .incident-print-area *,
+  .employee-background-print,
+  .employee-background-print *,
+  .monthly-gerencial-report,
+  .monthly-gerencial-report *,
+  .staff-audit-print,
+  .staff-audit-print * {
+    visibility: visible !important;
+  }
+  
+  #kiosko-global-print-area,
+  .pos-receipt-print,
+  .bar-receipt-print,
+  .receipt-print-area,
+  .closing-print-local {
+    display: block !important;
+    width: var(--ticket-content-width, 74mm) !important;
+    max-width: var(--ticket-content-width, 74mm) !important;
+    padding: 2mm !important;
+    margin: 0 auto !important;
+    font-family: 'Courier New', Courier, monospace !important;
+    font-size: 10pt !important;
+    background: white !important;
+    color: black !important;
+    z-index: 9999999 !important;
+    height: auto !important;
+    overflow: visible !important;
+  }
+
+  /* LISTADO DE INVENTARIO PDF (A4/Letter friendly) */
+  .inventory-print-list,
+  .print-area-sellers,
+  .print-area-audit,
+  .summary-print-area,
+  .summary-expense-report,
+  .debts-global-report,
+  .debts-global-report *,
+  .customer-statement-report,
+  .contract-print-area,
+  .liquidation-print-area,
+  .incident-print-area,
+  .employee-background-print,
+  .monthly-gerencial-report,
+  .staff-audit-print {
+    display: block !important;
+    position: relative !important;
+    width: 100% !important;
+    padding: 10mm !important;
+    background: white !important;
+    color: black !important;
+    overflow: visible !important;
+  }
+
+  .no-print {
+    display: none !important;
+  }
+}
+
+/* Evitar impresiones vacías si el contenedor está oculto o sin datos */
+@media screen {
+  #kiosko-global-print-area,
+  .pos-receipt-print,
+  .bar-receipt-print,
+  .receipt-print-area,
+  .closing-print-local {
+    display: none;
+  }
+}

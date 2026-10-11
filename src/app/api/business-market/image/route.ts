@@ -1,0 +1,4 @@
+import { NextRequest,NextResponse } from 'next/server';
+import { adminBucket,adminDb } from '@/lib/firebase-admin';
+export const runtime='nodejs';
+export async function GET(request:NextRequest){const id=String(request.nextUrl.searchParams.get('id')||''),index=Number(request.nextUrl.searchParams.get('index')||0),snapshot=await adminDb.doc(`businessMarketListings/${id}`).get(),paths:string[]=snapshot.data()?.storagePaths||[],path=paths[index];if(!snapshot.exists||!path)return new NextResponse('Imagen no encontrada',{status:404});const file=adminBucket.file(path),[exists]=await file.exists();if(!exists)return new NextResponse('Imagen no encontrada',{status:404});const[data]=await file.download(),[metadata]=await file.getMetadata();return new NextResponse(new Blob([new Uint8Array(data)],{type:String(metadata.contentType||'image/jpeg')}),{headers:{'Content-Type':String(metadata.contentType||'image/jpeg'),'Cache-Control':'public, max-age=86400'}})}
