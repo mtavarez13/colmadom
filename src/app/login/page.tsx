@@ -18,7 +18,7 @@ export default function LoginPage() {
   const auth=useAuth(), db=useFirestore(), { user,isUserLoading }=useUser();
   const router=useRouter(), { toast }=useToast();
   const [register,setRegister]=useState(false), [name,setName]=useState(""), [email,setEmail]=useState(""), [password,setPassword]=useState(""), [busy,setBusy]=useState(false);
-  const [phoneMode,setPhoneMode]=useState(false),[accountantMode,setAccountantMode]=useState(false),[acceptedTerms,setAcceptedTerms]=useState(false);
+  const [accountantMode,setAccountantMode]=useState(false),[acceptedTerms,setAcceptedTerms]=useState(false);
   useEffect(()=>{const mode=new URLSearchParams(window.location.search).get("mode");setRegister(mode==="register");setAccountantMode(mode==="accountant");},[]);
   useEffect(()=>{ void setPersistence(auth,browserLocalPersistence); },[auth]);
   useEffect(()=>{
@@ -52,8 +52,10 @@ export default function LoginPage() {
   async function submit(event:FormEvent) {
     event.preventDefault();setBusy(true);
     try {
-      if(phoneMode&&!register){
-        const response=await fetch('/api/phone-auth',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'login',phone:email,password})});
+      const identifier=email.trim();
+      const isEmail=/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(identifier);
+      if(!register&&!isEmail){
+        const response=await fetch('/api/phone-auth',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'login',phone:identifier,password})});
         const result=await response.json();
         if(!response.ok)throw new Error(result.error||'No se pudo iniciar sesión.');
         const credential=await signInWithCustomToken(auth,result.token);
@@ -61,6 +63,7 @@ export default function LoginPage() {
         return;
       }
       if(register){
+        if(!isEmail)throw new Error("Escribe un correo electrónico válido para crear tu cuenta.");
         if(!acceptedTerms)throw new Error("Debes aceptar los términos y condiciones.");
         if(name.trim().length<2)throw new Error("Escribe tu nombre.");
         if(password.length<8)throw new Error("La contraseña debe tener al menos 8 caracteres.");
@@ -68,7 +71,7 @@ export default function LoginPage() {
         await sendEmailVerification(credential.user);await signOut(auth);
         toast({title:"Revisa tu correo",description:"Enviamos el enlace de verificación. Después podrás iniciar sesión."});setRegister(false);setPassword("");
       }else{
-        const credential=await signInWithEmailAndPassword(auth,email.trim().toLowerCase(),password);
+        const credential=await signInWithEmailAndPassword(auth,identifier.toLowerCase(),password);
         const existingProfile=await getDoc(doc(db,"userProfiles",credential.user.uid));
         if(!existingProfile.exists())await bootstrap(credential.user);
         await redirectUser(credential.user.uid,credential.user.email);
@@ -94,18 +97,18 @@ export default function LoginPage() {
     <Card className="rounded-2xl border border-purple-400/30 shadow-2xl shadow-purple-900/40"><CardHeader className="px-5 pt-5 pb-2"><CardTitle>{accountantMode?'Registro exclusivo para contadores':register?"Crear una cuenta":"Iniciar sesión"}</CardTitle><CardDescription>{accountantMode?'Accede únicamente con tu cuenta de Google. El administrador habilitará el módulo de inventarios independientes.':register?"Comienza tu período de prueba.":"Accede a tu panel."}</CardDescription></CardHeader>
       <CardContent className="p-5 pt-3 space-y-3">{!accountantMode&&<form onSubmit={submit} className="space-y-3">
         {register&&<div><Label>Nombre</Label><div className="relative"><User className="absolute left-3 top-3 h-4 w-4 text-muted-foreground"/><Input className="h-10 pl-10" value={name} onChange={e=>setName(e.target.value)} required/></div></div>}
-        <div><Label>{phoneMode&&!register?'Número de teléfono':'Correo electrónico'}</Label><div className="relative"><Mail className="absolute left-3 top-3 h-4 w-4 text-muted-foreground"/><Input type={phoneMode&&!register?'tel':'email'} autoComplete={phoneMode&&!register?'tel':'email'} className="h-10 pl-10" value={email} onChange={e=>setEmail(e.target.value)} required/></div></div>
+        <div><Label>{register?'Correo electrónico':'Correo electrónico o teléfono'}</Label><div className="relative"><Mail className="absolute left-3 top-3 h-4 w-4 text-muted-foreground"/><Input type={register?'email':'text'} inputMode={register?'email':'text'} autoComplete={register?'email':'username'} placeholder={register?'nombre@correo.com':'nombre@correo.com o 8095551234'} className="h-10 pl-10" value={email} onChange={e=>setEmail(e.target.value)} required/></div></div>
         <div><Label>Contraseña</Label><div className="relative"><Lock className="absolute left-3 top-3 h-4 w-4 text-muted-foreground"/><Input type="password" autoComplete={register?"new-password":"current-password"} className="h-10 pl-10" value={password} onChange={e=>setPassword(e.target.value)} required/></div></div>
-        {!register&&!phoneMode&&<button type="button" onClick={resetPassword} className="text-xs font-bold text-primary hover:underline">¿Olvidaste tu contraseña?</button>}
+        {!register&&(!email.trim()||email.includes('@'))&&<button type="button" onClick={resetPassword} className="text-xs font-bold text-primary hover:underline">¿Olvidaste tu contraseña?</button>}
         {register&&<label className="flex items-start gap-2 text-xs leading-5"><input type="checkbox" className="mt-1" checked={acceptedTerms} onChange={e=>setAcceptedTerms(e.target.checked)}/><span>Acepto los <Link href="/terminos" target="_blank" className="font-bold text-primary underline">términos y condiciones</Link> y el tratamiento de datos descrito.</span></label>}
         <Button className="w-full h-11 font-black" disabled={busy||(register&&!acceptedTerms)}>{busy&&<Loader2 className="mr-2 h-4 w-4 animate-spin"/>}{register?"CREAR CUENTA":"INICIAR SESIÓN"}</Button>
       </form>}
       {accountantMode&&<label className="flex items-start gap-2 text-xs leading-5"><input type="checkbox" className="mt-1" checked={acceptedTerms} onChange={e=>setAcceptedTerms(e.target.checked)}/><span>Acepto los <Link href="/terminos" target="_blank" className="font-bold text-purple-700 underline">términos y condiciones</Link>.</span></label>}
-      {(!phoneMode||accountantMode)&&<Button type="button" variant={accountantMode?'default':'outline'} className="w-full h-12 font-bold bg-purple-600 hover:bg-purple-500 text-white border-purple-400" onClick={google} disabled={busy||(accountantMode&&!acceptedTerms)}><Chrome className="mr-2 h-4 w-4"/>{accountantMode?'Registrarme como contador con Google':'Continuar con Google'}</Button>}
-      {!accountantMode&&!register&&<button type="button" onClick={()=>{setPhoneMode(v=>!v);setEmail('');setPassword('');}} className="w-full text-center text-sm font-bold text-primary hover:underline">{phoneMode?'Entrar con correo':'Entrar como empleado con teléfono'}</button>}
-      {!accountantMode&&!phoneMode&&<button onClick={()=>{setRegister(v=>!v);setPassword("");}} className="w-full text-center text-sm font-bold text-primary hover:underline">{register?"Ya tengo una cuenta":"Crear una cuenta"}</button>}
+      <Button type="button" variant={accountantMode?'default':'outline'} className="w-full h-12 font-bold bg-purple-600 hover:bg-purple-500 text-white border-purple-400" onClick={google} disabled={busy||(accountantMode&&!acceptedTerms)}><Chrome className="mr-2 h-4 w-4"/>{accountantMode?'Registrarme como contador con Google':'Continuar con Google'}</Button>
+      {!accountantMode&&<button onClick={()=>{setRegister(v=>!v);setPassword("");setEmail("");}} className="w-full text-center text-sm font-bold text-primary hover:underline">{register?"Ya tengo una cuenta":"Crear una cuenta"}</button>}
       {accountantMode&&<button onClick={()=>{setAccountantMode(false);router.replace('/login');}} className="w-full text-center text-sm font-bold text-purple-700 hover:underline">Volver al acceso general</button>}
-      {!register&&!accountantMode&&<p className="text-center text-[10px] text-muted-foreground">Al utilizar Colmadom Cloud aceptas nuestros <Link href="/terminos" className="underline">términos y condiciones</Link>.</p>}
+      {!register&&!accountantMode&&<p className="text-center text-[10px] text-muted-foreground">Puedes entrar con tu correo o teléfono registrado. Al utilizar Colmadom Cloud aceptas nuestros <Link href="/terminos" className="underline">términos y condiciones</Link>.</p>}
       </CardContent></Card>
   </div></main>;
 }
+
