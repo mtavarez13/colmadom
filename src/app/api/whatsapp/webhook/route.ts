@@ -49,7 +49,7 @@ await adminDb.runTransaction(async tx=>{
   if(!store)throw new Error('Sucursal inexistente');
   const plan=store.rootColmadoId&&store.rootColmadoId!==colmadoId?(await tx.get(adminDb.doc(`colmados/${store.rootColmadoId}`))).data():store;
   const expiry=Number(plan?.trialEndAtMillis)||Date.parse(plan?.trialEndDate||'');
-  if(!plan || (plan.subscriptionStatus!=='Active' && !(plan.subscriptionStatus==='Trial'&&Number.isFinite(expiry)&&expiry>Date.now())))throw new Error('Sucursal sin suscripción activa');
+  if(!plan || plan.suspensionNoticeEnabled===true || (plan.subscriptionStatus!=='Active' && !(plan.subscriptionStatus==='Trial'&&Number.isFinite(expiry)&&expiry>Date.now())))throw new Error('Sucursal sin suscripción activa');
   if(!Array.isArray(current.items)||!current.items.length||current.items.length>80)throw new Error('Pedido inválido');
   const products=await Promise.all(current.items.map((item:any)=>tx.get(adminDb.doc(`colmados/${colmadoId}/products/${item.productId}`))));
   let serverTotal=0;
@@ -103,6 +103,10 @@ async function receiveMessage(value: any, message: any, allowAutoReply = true, r
       status: 'Received', createdAt: new Date().toISOString()
     }, { merge: true });
   }
+  const branch=(await adminDb.doc(`colmados/${colmadoId}`).get()).data();
+  const rootId=String(branch?.rootColmadoId||colmadoId);
+  const root=rootId===colmadoId?branch:(await adminDb.doc(`colmados/${rootId}`).get()).data();
+  if(root?.suspensionNoticeEnabled===true){await eventRef.set({processed:true,processedAt:new Date().toISOString(),pausedForSuspension:true},{merge:true});return;}
   try{await orderBot(colmadoId,connectionDoc,connection,from,body,metaMessageId)}catch(error){console.error('WhatsApp order bot failed',error);await connectionDoc.ref.set({lastBotError:error instanceof Error?error.message:'No se pudo procesar el pedido.',lastBotErrorAt:new Date().toISOString()},{merge:true});await eventRef.set({leaseUntil:0},{merge:true});throw error;}
   await eventRef.set({processed:true,processedAt:new Date().toISOString()},{merge:true});
   if (!allowAutoReply || !connection.autoReplyEnabled || !connection.welcomeMessage) return;

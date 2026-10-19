@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { adminAuth, adminDb } from '@/lib/firebase-admin';
-import { apiError, requireIdentity } from '@/lib/server-auth';
+import { apiError, assertStoreNotSuspended, requireIdentity } from '@/lib/server-auth';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -12,6 +12,7 @@ async function ownerContext(request: NextRequest, colmadoId: string) {
   const allowed = new Set([String(profile.colmadoId), ...(Array.isArray(profile.allowedColmadoIds) ? profile.allowedColmadoIds.map(String) : [])]);
   if (!allowed.has(colmadoId)) throw new Error('FORBIDDEN');
   if (!(await adminDb.doc(`colmados/${colmadoId}`).get()).exists) throw new Error('FORBIDDEN');
+  await assertStoreNotSuspended(colmadoId);
   return { identity, profile };
 }
 

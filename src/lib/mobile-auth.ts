@@ -22,7 +22,7 @@ export async function activeStore(id: string) {
   const rootId = store.rootColmadoId || id;
   if (!validId(rootId)) return null;
   const plan = rootId === id ? store : (await adminDb.doc(`colmados/${rootId}`).get()).data();
-  if (!plan || plan.isActive === false || plan.isDeleted === true) return null;
+  if (!plan || plan.isActive === false || plan.isDeleted === true || plan.suspensionNoticeEnabled === true) return null;
   const expiry = Number(plan.trialEndAtMillis) || Date.parse(plan.trialEndDate || '');
   if (plan.subscriptionStatus !== 'Active' && !(plan.subscriptionStatus === 'Trial' && Number.isFinite(expiry) && expiry > Date.now())) return null;
   return store;

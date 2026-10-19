@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { NextRequest, NextResponse } from 'next/server';
 import { adminAuth, adminDb } from '@/lib/firebase-admin';
 import { sendWhatsAppText } from '@/lib/whatsapp-cloud';
+import { assertStoreNotSuspended } from '@/lib/server-auth';
 
 export const runtime = 'nodejs';
 
@@ -15,6 +16,7 @@ export async function POST(request: NextRequest) {
         (!['Admin', 'Supervisor'].includes(String(profile.role)) && !profile.allowedModules?.includes('whatsapp')))
       return NextResponse.json({ error: 'No tienes acceso al WhatsApp de este colmado.' }, { status: 403 });
     const colmadoId = String(profile.colmadoId);
+    await assertStoreNotSuspended(colmadoId);
     const body = await request.json();
     const customerId = String(body.customerId || '');
     const text = String(body.body || '').trim();

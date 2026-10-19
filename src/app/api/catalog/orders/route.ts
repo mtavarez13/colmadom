@@ -24,7 +24,7 @@ export async function POST(request:NextRequest) {
       if(!validId(rootId))throw new MobileError(403,'Sucursal inválida.');
       const plan=rootId===body.colmadoId?store:(await tx.get(adminDb.doc(`colmados/${rootId}`))).data();
       const expiry=Number(plan?.trialEndAtMillis)||Date.parse(plan?.trialEndDate||'');
-      if(!plan || (plan.subscriptionStatus!=='Active' && !(plan.subscriptionStatus==='Trial'&&Number.isFinite(expiry)&&expiry>Date.now())))throw new MobileError(403,'La sucursal no recibe pedidos.');
+      if(!plan || plan.suspensionNoticeEnabled===true || (plan.subscriptionStatus!=='Active' && !(plan.subscriptionStatus==='Trial'&&Number.isFinite(expiry)&&expiry>Date.now())))throw new MobileError(403,'La sucursal no recibe pedidos mientras el servicio está suspendido.');
       const rateRef=adminDb.doc(`catalogRateLimits/${body.colmadoId}`),rate=(await tx.get(rateRef)).data(),window=Math.floor(Date.now()/60000);
       if(rate?.window===window && rate.count>=30)throw new MobileError(429,'Demasiados pedidos. Intenta en un minuto.');
       const ids=[...new Set(body.items.map(i=>i.productId))];

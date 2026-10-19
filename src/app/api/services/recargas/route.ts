@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { adminDb } from '@/lib/firebase-admin';
-import { apiError, requireIdentity } from '@/lib/server-auth';
+import { apiError, assertStoreNotSuspended, requireIdentity } from '@/lib/server-auth';
 import { normalizeRecargasEnvironment, recargasPublicError, recargasRequest, type RecargasEnvironment } from '@/services/recargas-dominicanas';
 
 export const runtime = 'nodejs';
@@ -16,6 +16,7 @@ async function userContext(request: NextRequest) {
   const allowed = Array.isArray(profile.allowedModules) ? profile.allowedModules : [];
   if (!['Admin', 'Owner', 'Dueño', 'Cashier', 'Cajero'].includes(role) && !allowed.includes('services')) throw new Error('FORBIDDEN');
   const colmadoId = String(profile.rootColmadoId || profile.colmadoId);
+  await assertStoreNotSuspended(colmadoId);
   const [config, store] = await Promise.all([
     adminDb.doc(PLATFORM_CONFIG).get(), adminDb.doc(`colmados/${colmadoId}`).get(),
   ]);

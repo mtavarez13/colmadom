@@ -38,7 +38,7 @@ export async function checkoutPos(request: NextRequest, input: Checkout) {
     if (!validId(planId)) throw new MobileError(403,'Suscripción inválida.');
     const plan = planId === input.storeId ? store : (await tx.get(adminDb.doc(`colmados/${planId}`))).data();
     const expiry = Number(plan?.trialEndAtMillis) || Date.parse(plan?.trialEndDate || '');
-    if (!plan || (plan.subscriptionStatus !== 'Active' && !(plan.subscriptionStatus === 'Trial' && expiry > Date.now()))) throw new MobileError(403,'Suscripción inactiva.');
+    if (!plan || plan.suspensionNoticeEnabled === true || (plan.subscriptionStatus !== 'Active' && !(plan.subscriptionStatus === 'Trial' && expiry > Date.now()))) throw new MobileError(403,'Suscripción inactiva o suspendida por pago.');
     if (fiscalBlock(store)) throw new MobileError(422,'Esta sucursal requiere facturación fiscal. Finaliza la venta en el POS web.');
     const products = new Map<string,FirebaseFirestore.DocumentData>();
     const ids = [...new Set(input.items.map(i=>i.productId))];

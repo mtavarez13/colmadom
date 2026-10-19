@@ -1,6 +1,7 @@
 import { timingSafeEqual } from 'node:crypto';
 import { NextRequest, NextResponse } from 'next/server';
 import { adminAuth, adminDb } from '@/lib/firebase-admin';
+import { assertStoreNotSuspended } from '@/lib/server-auth';
 
 export const runtime = 'nodejs';
 
@@ -24,6 +25,7 @@ export async function POST(request: NextRequest) {
     const allowed = profile?.isActive !== false && ['Admin', 'Supervisor', 'Contable'].includes(String(profile?.role || '')) &&
       (profile?.colmadoId === colmadoId || (Array.isArray(profile?.allowedColmadoIds) && profile.allowedColmadoIds.includes(colmadoId)));
     if (!allowed) return NextResponse.json({ error: 'No tienes acceso a este colmado.' }, { status: 403 });
+    await assertStoreNotSuspended(colmadoId);
 
     const storeRef = adminDb.doc(`colmados/${colmadoId}`);
     const productRef = adminDb.doc(`colmados/${colmadoId}/products/${productId}`);
@@ -51,6 +53,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: true, reportId: reportRef.id });
   } catch (error) {
     const code = error instanceof Error ? error.message : '';
+    if (code === 'SUBSCRIPTION_SUSPENDED') return NextResponse.json({ error: 'Servicio suspendido hasta confirmar el pago.' }, { status: 403 });
     const status = code === 'MASTER_KEY' ? 403 : code === 'NOT_FOUND' ? 404 : 400;
     const message = code === 'MASTER_KEY' ? 'Clave maestra incorrecta.' : code === 'INVALID_VALUES' ? 'Los valores indicados no son válidos.' : 'No se pudo registrar la auditoría.';
     return NextResponse.json({ error: message }, { status });

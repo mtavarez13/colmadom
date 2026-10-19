@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { adminAuth, adminDb } from '@/lib/firebase-admin';
 import { connectionRef } from '@/lib/whatsapp-cloud';
 import { getMetaConfig } from '@/lib/meta-config';
+import { assertStoreNotSuspended } from '@/lib/server-auth';
 
 export const runtime = 'nodejs';
 
@@ -11,6 +12,7 @@ async function owner(request: NextRequest) {
   const identity = await adminAuth.verifyIdToken(token);
   const profile = (await adminDb.doc('userProfiles/' + identity.uid).get()).data();
   if (!profile || profile.role !== 'Admin' || profile.isActive === false || !profile.colmadoId) throw new Error('OWNER');
+  await assertStoreNotSuspended(profile.colmadoId);
   return { uid: identity.uid, email: String(identity.email||'').toLowerCase(), colmadoId: String(profile.colmadoId) };
 }
 

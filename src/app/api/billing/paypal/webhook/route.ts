@@ -15,8 +15,10 @@ async function resolveSubscription(subscriptionId:string,resource:any):Promise<S
  if(!saved.exists)detail=await paypalRequest('/v1/billing/subscriptions/'+encodeURIComponent(subscriptionId));
  const data=saved.data()||{},customId=String(data.customId||detail?.custom_id||resource?.custom_id||''),planId=String(data.planId||detail?.plan_id||resource?.plan_id||'');
  const match=customId.match(/^COLMADO:([^:]+):([^:]+)$/);
- if(!match||planId!==PLAN1_ID)throw new Error('PAYPAL_SUBSCRIPTION_UNLINKED');
+ if(!match)throw new Error('PAYPAL_SUBSCRIPTION_UNLINKED');
  const [,tenantId,userId]=match,profile=(await adminDb.doc('userProfiles/'+userId).get()).data();
+ const store=(await adminDb.doc('colmados/'+tenantId).get()).data();
+ if(!store||planId!==String(store.paypalPlan1PlanId||PLAN1_ID))throw new Error('PAYPAL_SUBSCRIPTION_UNLINKED');
  if(!profile||profile.isActive===false||(profile.rootColmadoId||profile.colmadoId)!==tenantId)throw new Error('PAYPAL_SUBSCRIPTION_OWNER_INVALID');
  if(data.tenantId&&data.tenantId!==tenantId)throw new Error('PAYPAL_SUBSCRIPTION_OWNER_INVALID');
  return{id:subscriptionId,tenantId,userId,customId,planId};
@@ -60,8 +62,8 @@ export async function POST(request:NextRequest){
      if(!storeSnap.exists)throw new Error('COLMADO_NOT_FOUND');
      if(paymentSnap.exists){tx.set(webhookEventRef,{processed:true,processedAt:nowIso,tenantId:linked.tenantId,subscriptionId,paymentId},{merge:true});return;}
      const store=storeSnap.data()||{},coverage=paymentCoverage(store,1,now);
-     tx.create(adminDb.doc('payments/'+paymentId),{id:paymentId,provider:'PAYPAL_SUBSCRIPTION',providerTransactionId:paymentId,paypalSubscriptionId:subscriptionId,userId:linked.userId,tenantId:linked.tenantId,planId:PLAN1_ID,amount,currency,status:'COMPLETED',monthsCovered:1,coverageFromMonth:coverage.fromMonth,coverageThroughMonth:coverage.throughMonth,createdAt:String(resource.create_time||nowIso),receivedAt:nowIso});
-     tx.set(storeRef,{subscriptionStatus:'Active',subscriptionStatusCode:'ACTIVO',billingPaidThroughMonth:coverage.throughMonth,billingProrationPending:false,billingLastPaymentAt:nowIso,billingLastPaymentAmount:amount,paypalPlan1SubscriptionId:subscriptionId,paypalPlan1SubscriptionStatus:'ACTIVE',paypalPlan1LastPaymentAt:nowIso,paypalPlan1LastPaymentAmount:amount,updatedAt:nowIso},{merge:true});
+     tx.create(adminDb.doc('payments/'+paymentId),{id:paymentId,provider:'PAYPAL_SUBSCRIPTION',providerTransactionId:paymentId,paypalSubscriptionId:subscriptionId,userId:linked.userId,tenantId:linked.tenantId,planId:linked.planId,amount,currency,status:'COMPLETED',monthsCovered:1,coverageFromMonth:coverage.fromMonth,coverageThroughMonth:coverage.throughMonth,createdAt:String(resource.create_time||nowIso),receivedAt:nowIso});
+     tx.set(storeRef,{subscriptionStatus:'Active',subscriptionStatusCode:'ACTIVO',suspensionNoticeEnabled:false,suspensionNoticeUpdatedAt:nowIso,billingPaidThroughMonth:coverage.throughMonth,billingProrationPending:false,billingLastPaymentAt:nowIso,billingLastPaymentAmount:amount,paypalPlan1SubscriptionId:subscriptionId,paypalPlan1SubscriptionStatus:'ACTIVE',paypalPlan1LastPaymentAt:nowIso,paypalPlan1LastPaymentAmount:amount,updatedAt:nowIso},{merge:true});
      tx.set(subscriptionRef,{...linked,status:'ACTIVE',lastPaymentId:paymentId,lastPaymentAmount:amount,lastPaymentCurrency:currency,lastPaymentAt:nowIso,updatedAt:nowIso},{merge:true});
      tx.set(webhookEventRef,{processed:true,processedAt:nowIso,tenantId:linked.tenantId,subscriptionId,paymentId},{merge:true});
      tx.create(adminDb.collection('auditLogs').doc(),{actorUid:'paypal-webhook',action:'PAYPAL_PLAN1_PAYMENT_COMPLETED',targetType:'payment',targetId:paymentId,tenantId:linked.tenantId,subscriptionId,amount,currency,createdAt:nowIso});

@@ -15,9 +15,10 @@ export async function POST(request:NextRequest){
   if(!storeSnap.exists)return NextResponse.json({error:'No se encontró el negocio asociado.'},{status:404});
   const store=storeSnap.data()!,today=santoDomingoDate(),noticeStart=String(store.paypalPlan1NoticeStartDate||'');
   if(store.paypalPlan1Enabled!==true||!/^\d{4}-\d{2}-\d{2}$/.test(noticeStart)||noticeStart>today)return NextResponse.json({error:'La suscripción PayPal todavía no está habilitada para este comercio.'},{status:403});
-  const expectedCustomId=`COLMADO:${rootColmadoId}:${identity.uid}`;
+  const assignedPlan=store.planId?await adminDb.doc('plans/'+String(store.planId)).get():null;
+  const planId=String(assignedPlan?.data()?.isActive!==false&&assignedPlan?.data()?.paypalPlanId||store.paypalPlan1PlanId||PLAN_ID),expectedCustomId=`COLMADO:${rootColmadoId}:${identity.uid}`;
   const detail=await paypalRequest('/v1/billing/subscriptions/'+encodeURIComponent(subscriptionId));
-  if(detail.id!==subscriptionId||detail.plan_id!==PLAN_ID||detail.custom_id!==expectedCustomId)return NextResponse.json({error:'PayPal devolvió una suscripción que no corresponde a este comercio o al Plan 1.'},{status:400});
+  if(detail.id!==subscriptionId||detail.plan_id!==planId||detail.custom_id!==expectedCustomId)return NextResponse.json({error:'PayPal devolvió una suscripción que no corresponde a este comercio o al plan asignado.'},{status:400});
   if(!['APPROVAL_PENDING','APPROVED','ACTIVE'].includes(String(detail.status||'')))return NextResponse.json({error:'PayPal no confirmó la aprobación de la suscripción.'},{status:409});
   const now=new Date().toISOString(),subscriptionRef=adminDb.doc('paypalSubscriptions/'+subscriptionId);
   await adminDb.runTransaction(async tx=>{
@@ -27,10 +28,10 @@ export async function POST(request:NextRequest){
    if(old&&(old.tenantId!==rootColmadoId||old.userId!==identity.uid))throw new Error('SUBSCRIPTION_ALREADY_LINKED');
    const currentId=String(current.paypalPlan1SubscriptionId||'');
    if(currentId&&currentId!==subscriptionId&&current.paypalPlan1SubscriptionStatus==='ACTIVE')throw new Error('ACTIVE_SUBSCRIPTION_EXISTS');
-   tx.set(subscriptionRef,{id:subscriptionId,tenantId:rootColmadoId,userId:identity.uid,ownerEmail:identity.email||'',planId:PLAN_ID,customId:expectedCustomId,status:detail.status,createdAt:old?.createdAt||now,updatedAt:now},{merge:true});
-   tx.set(storeRef,{paypalPlan1SubscriptionId:subscriptionId,paypalPlan1SubscriptionStatus:detail.status,paypalPlan1PlanId:PLAN_ID,paypalPlan1SubscriptionUpdatedAt:now,updatedAt:now},{merge:true});
+   tx.set(subscriptionRef,{id:subscriptionId,tenantId:rootColmadoId,userId:identity.uid,ownerEmail:identity.email||'',planId,customId:expectedCustomId,status:detail.status,createdAt:old?.createdAt||now,updatedAt:now},{merge:true});
+   tx.set(storeRef,{paypalPlan1SubscriptionId:subscriptionId,paypalPlan1SubscriptionStatus:detail.status,paypalPlan1PlanId:planId,paypalPlan1SubscriptionUpdatedAt:now,updatedAt:now},{merge:true});
   });
-  await adminDb.collection('auditLogs').add({actorUid:identity.uid,actorEmail:identity.email||'',action:'PAYPAL_PLAN1_SUBSCRIPTION_LINKED',targetType:'colmado',targetId:rootColmadoId,subscriptionId,planId:PLAN_ID,status:detail.status,createdAt:now});
+  await adminDb.collection('auditLogs').add({actorUid:identity.uid,actorEmail:identity.email||'',action:'PAYPAL_PLAN1_SUBSCRIPTION_LINKED',targetType:'colmado',targetId:rootColmadoId,subscriptionId,planId,status:detail.status,createdAt:now});
   return NextResponse.json({ok:true,status:detail.status,subscriptionId});
  }catch(error){
   if(error instanceof Error&&error.message==='NOT_FOUND')return NextResponse.json({error:'No se encontró el negocio.'},{status:404});

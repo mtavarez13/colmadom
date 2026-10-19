@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { adminDb } from '@/lib/firebase-admin';
-import { apiError, requireIdentity } from '@/lib/server-auth';
+import { apiError, assertStoreNotSuspended, requireIdentity } from '@/lib/server-auth';
 import { fiscalLine, fiscalTotals, validateEcfDraft } from '@/lib/dominican-fiscal';
 import { msellerEnvironment, msellerRequest } from '@/lib/mseller-client';
 
@@ -16,6 +16,7 @@ export async function POST(request:NextRequest){
   if(!profile?.colmadoId||profile.isActive===false||profile.role==='Driver')return NextResponse.json({error:'Sin permiso para gestionar e-CF.'},{status:403});
   const colmadoId=String(body.colmadoId||profile.colmadoId);
   if(colmadoId!==profile.colmadoId&&!profile.allowedColmadoIds?.includes(colmadoId))return NextResponse.json({error:'Sucursal no autorizada.'},{status:403});
+  await assertStoreNotSuspended(colmadoId);
   const storeRef=adminDb.doc(`colmados/${colmadoId}`),store=(await storeRef.get()).data();
   if(!store?.fiscalEnabled||!String(store.fiscalMode||'').startsWith('ecf-'))return NextResponse.json({error:'Activa e-CF para este negocio.'},{status:409});
   const environment=msellerEnvironment(store.msellerEnvironment||process.env.MSELLER_ENVIRONMENT);

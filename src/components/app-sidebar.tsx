@@ -141,11 +141,14 @@ export function AppSidebar() {
   const cardNoticeDue = subscription?.paypalPlan1Enabled === true && /^\d{4}-\d{2}-\d{2}$/.test(cardNoticeStartDate) && subscription?.paypalPlan1SubscriptionStatus !== 'ACTIVE' && !!todayInDR && cardNoticeStartDate <= todayInDR;
 
   useEffect(() => {
-    if (cardNoticeDue) setPaymentReminderOpen(false);
-  }, [cardNoticeDue]);
+    if (cardNoticeDue || subscription?.suspensionNoticeEnabled === true) {
+      setPaymentReminderOpen(false);
+      setCardReminderOpen(false);
+    }
+  }, [cardNoticeDue, subscription?.suspensionNoticeEnabled]);
 
   useEffect(() => {
-    if (!mounted || !subscription?.id || subscription?.paymentReminderEnabled !== true || cardNoticeDue || !canViewBilling) {
+    if (!mounted || !subscription?.id || subscription?.paymentReminderEnabled !== true || cardNoticeDue || subscription?.suspensionNoticeEnabled === true || !canViewBilling) {
       setPaymentReminderOpen(false);
       return;
     }
@@ -161,10 +164,10 @@ export function AppSidebar() {
     checkReminder();
     const timer = window.setInterval(checkReminder, Math.min(60_000, frequencyMs));
     return () => window.clearInterval(timer);
-  }, [mounted, subscription?.id, subscription?.paymentReminderEnabled, subscription?.paymentReminderFrequencyMinutes, subscription?.paymentReminderUpdatedAt, cardNoticeDue, canViewBilling, user?.uid]);
+  }, [mounted, subscription?.id, subscription?.paymentReminderEnabled, subscription?.paymentReminderFrequencyMinutes, subscription?.paymentReminderUpdatedAt, subscription?.suspensionNoticeEnabled, cardNoticeDue, canViewBilling, user?.uid]);
 
   useEffect(() => {
-    if (!mounted || !subscription?.id || !cardNoticeDue || !canViewBilling) {
+    if (!mounted || !subscription?.id || !cardNoticeDue || subscription?.suspensionNoticeEnabled === true || !canViewBilling) {
       setCardReminderOpen(false);
       return;
     }
@@ -180,14 +183,14 @@ export function AppSidebar() {
     checkReminder();
     const timer = window.setInterval(checkReminder, Math.min(60_000, frequencyMs));
     return () => window.clearInterval(timer);
-  }, [mounted, subscription?.id, subscription?.paymentReminderFrequencyMinutes, cardNoticeDue, cardNoticeStartDate, canViewBilling, user?.uid]);
+  }, [mounted, subscription?.id, subscription?.paymentReminderFrequencyMinutes, subscription?.suspensionNoticeEnabled, cardNoticeDue, cardNoticeStartDate, canViewBilling, user?.uid]);
 
   // REDIRECCIÓN SI ESTÁ SUSPENDIDO
   useEffect(() => {
-    if (mounted && isSubscriptionBlocked(subscription) && !pathname.startsWith('/billing') && !isPlatformAdmin && !currentModuleIsFree) {
+    if (mounted && isSubscriptionBlocked(subscription) && !pathname.startsWith('/billing') && !isPlatformAdmin && canViewBilling && (subscription?.suspensionNoticeEnabled === true || !currentModuleIsFree)) {
       router.replace('/billing');
     }
-  }, [subscription, mounted, pathname, isPlatformAdmin, currentModuleIsFree, router]);
+  }, [subscription, mounted, pathname, isPlatformAdmin, currentModuleIsFree, canViewBilling, router]);
 
   const navItems = [
     { id: 'branches', icon: Store, label: "Mis Sucursales", href: "/branches", condition: profile?.role === 'Admin' && accessibleBranches.length > 1 },
@@ -217,6 +220,7 @@ export function AppSidebar() {
 
   const filteredNavItems = navItems.filter(item => {
     if (isPlatformAdmin) return true;
+    if (subscription?.suspensionNoticeEnabled === true) return false;
     if (profile?.role === 'ContableIndependiente') return item.id === 'independent-audits' && profile?.allowedModules?.includes('independent-audits');
     if (profile?.role === 'Contable') return item.id === 'inventory-audit';
     if (['marketplace','business-market'].includes(item.id) && profile?.role !== 'Driver') return true;
@@ -301,7 +305,7 @@ export function AppSidebar() {
             </Alert>
           </div>
         )}
-        {subscription?.suspensionNoticeEnabled === true && canViewBilling && (
+        {subscription?.suspensionNoticeEnabled === true && (
           <div className={cn("px-3 pb-2",state==='collapsed'&&"px-1")}>
             <Alert className={cn("border-2 border-red-600 bg-red-50 text-red-950 shadow-lg",state==='collapsed'&&"p-2")}>
               <AlertTriangle className="h-4 w-4"/>

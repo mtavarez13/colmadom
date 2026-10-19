@@ -22,7 +22,8 @@ service cloud.firestore {
       let store = get(/databases/$(database)/documents/colmados/$(colmadoId)).data;
       let rootId = store.get('rootColmadoId', colmadoId);
       let plan = get(/databases/$(database)/documents/colmados/$(rootId)).data;
-      return (plan.get('subscriptionStatus', 'Trial') == 'Active' ||
+      return plan.get('suspensionNoticeEnabled', false) != true &&
+        (plan.get('subscriptionStatus', 'Trial') == 'Active' ||
         (plan.get('subscriptionStatus', 'Trial') == 'Trial' &&
          (plan.get('trialEndAtMillis', 0) == 0 || plan.get('trialEndAtMillis', 0) > request.time.toMillis()))) &&
         store.get('isDeleted', false) != true && plan.get('isDeleted', false) != true &&
@@ -33,7 +34,8 @@ service cloud.firestore {
       let store = get(/databases/$(database)/documents/colmados/$(colmadoId)).data;
       let rootId = store.get('rootColmadoId', colmadoId);
       let plan = get(/databases/$(database)/documents/colmados/$(rootId)).data;
-      return store.get('isDeleted', false) != true && plan.get('isDeleted', false) != true &&
+      return plan.get('suspensionNoticeEnabled', false) != true &&
+        store.get('isDeleted', false) != true && plan.get('isDeleted', false) != true &&
         store.get('isActive', true) != false && plan.get('isActive', true) != false;
     }
 

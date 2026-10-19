@@ -4,6 +4,6 @@ export function isTrialExpired(colmado: { subscriptionStatus?: string; trialEndD
   return !Number.isFinite(end) || Date.now() >= end;
 }
 
-export function isSubscriptionBlocked(colmado: { subscriptionStatus?: string; trialEndDate?: string } | null | undefined): boolean {
-  return colmado?.subscriptionStatus === 'Suspended' || colmado?.subscriptionStatus === 'Pending' || isTrialExpired(colmado);
+export function isSubscriptionBlocked(colmado: { subscriptionStatus?: string; trialEndDate?: string; suspensionNoticeEnabled?: boolean } | null | undefined): boolean {
+  return colmado?.suspensionNoticeEnabled === true || colmado?.subscriptionStatus === 'Suspended' || colmado?.subscriptionStatus === 'Pending' || isTrialExpired(colmado);
 }

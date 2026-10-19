@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { adminAuth, adminDb } from '@/lib/firebase-admin';
+import { assertStoreNotSuspended } from '@/lib/server-auth';
 
 export const runtime = 'nodejs';
 
@@ -17,6 +18,7 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const action = String(body.action || '');
     const colmadoId = String(profile.colmadoId);
+    await assertStoreNotSuspended(colmadoId);
     const now = new Date().toISOString();
 
     if (action === 'request') {
@@ -76,6 +78,7 @@ export async function POST(request: NextRequest) {
 
     return reply('Acción desconocida.', 400);
   } catch (error) {
+    if (error instanceof Error && error.message === 'SUBSCRIPTION_SUSPENDED') return reply('Servicio suspendido hasta confirmar el pago.', 403);
     if (error instanceof Error && ['DELIVERIES_CHANGED', 'SETTLEMENT_CHANGED', 'AMOUNT_MISMATCH', 'NO_CASH'].includes(error.message))
       return reply('El estado o monto cambió. Actualiza la pantalla e intenta de nuevo.', 409);
     console.error('Delivery settlement error', error);
