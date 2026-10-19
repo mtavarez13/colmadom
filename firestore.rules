@@ -122,6 +122,7 @@ service cloud.firestore {
         request.resource.data.get('billingDueDay', 25) == resource.data.get('billingDueDay', 25) &&
         request.resource.data.get('billingGraceDays', 5) == resource.data.get('billingGraceDays', 5) &&
         request.resource.data.get('billingConfigured', false) == resource.data.get('billingConfigured', false) &&
+        request.resource.data.get('billingUserIds', []) == resource.data.get('billingUserIds', []) &&
         request.resource.data.get('paymentReminderEnabled', false) == resource.data.get('paymentReminderEnabled', false) &&
         request.resource.data.get('paymentReminderMessage', '') == resource.data.get('paymentReminderMessage', '') &&
         request.resource.data.get('paymentReminderFrequencyMinutes', 60) == resource.data.get('paymentReminderFrequencyMinutes', 60) &&

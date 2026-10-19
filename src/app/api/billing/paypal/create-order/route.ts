@@ -1,12 +1,12 @@
 import { NextRequest,NextResponse } from 'next/server';
 import { adminDb } from '@/lib/firebase-admin';
-import { apiError,requireOwner } from '@/lib/server-auth';
+import { apiError,requireBillingUser } from '@/lib/server-auth';
 import { paypalRequest } from '@/lib/paypal';
 import { paymentCoverage } from '@/lib/saas-billing';
 export const runtime='nodejs';
 export async function POST(request:NextRequest){
  try{
-  const {identity,rootColmadoId}=await requireOwner(request),body=await request.json(),planId=String(body.planId||''),months=Math.max(1,Math.min(24,Math.floor(Number(body.months||1))));
+  const {identity,rootColmadoId}=await requireBillingUser(request),body=await request.json(),planId=String(body.planId||''),months=Math.max(1,Math.min(24,Math.floor(Number(body.months||1))));
   const plan=await adminDb.doc('plans/'+planId).get();if(!plan.exists||plan.data()?.isActive===false)return NextResponse.json({error:'Plan no disponible.'},{status:400});
   const storeSnapshot=await adminDb.doc('colmados/'+rootColmadoId).get(),store=storeSnapshot.data()||{},coverage=paymentCoverage(store,months),monthlyPaypal=Number(store.billingPaypalMonthlyPrice||plan.data()?.paypalPrice||plan.data()?.price),monthlyDop=Number(store.billingMonthlyFee||store.monthlyFee||0),prorationRatio=monthlyDop>0?coverage.proration/monthlyDop:0,amount=monthlyPaypal*months+monthlyPaypal*prorationRatio,currency=String(store.billingPaypalCurrency||plan.data()?.paypalCurrency||'USD');
   if(!Number.isFinite(amount)||amount<=0)return NextResponse.json({error:'El plan no tiene precio PayPal configurado.'},{status:409});

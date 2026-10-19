@@ -1,12 +1,12 @@
 import { NextRequest,NextResponse } from 'next/server';
 import { adminDb } from '@/lib/firebase-admin';
-import { apiError,requireOwner } from '@/lib/server-auth';
+import { apiError,requireBillingUser } from '@/lib/server-auth';
 import { paypalRequest } from '@/lib/paypal';
 import { pendingMonthsAfterPayment } from '@/lib/saas-billing';
 export const runtime='nodejs';
 export async function POST(request:NextRequest){
  try{
-  const {identity,rootColmadoId}=await requireOwner(request),orderId=String((await request.json()).orderId||''),orderRef=adminDb.doc('paypalOrders/'+orderId),saved=await orderRef.get();
+  const {identity,rootColmadoId}=await requireBillingUser(request),orderId=String((await request.json()).orderId||''),orderRef=adminDb.doc('paypalOrders/'+orderId),saved=await orderRef.get();
   if(!saved.exists||saved.data()?.tenantId!==rootColmadoId||saved.data()?.userId!==identity.uid)return NextResponse.json({error:'Orden de pago inválida.'},{status:400});
   const capture=await paypalRequest('/v2/checkout/orders/'+encodeURIComponent(orderId)+'/capture',{method:'POST',headers:{'PayPal-Request-Id':'capture-'+orderId}});
   const detail=capture.purchase_units?.[0]?.payments?.captures?.[0];if(capture.status!=='COMPLETED'||detail?.status!=='COMPLETED')return NextResponse.json({error:'PayPal todavía no confirmó el pago.'},{status:409});

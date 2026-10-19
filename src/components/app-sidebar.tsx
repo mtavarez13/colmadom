@@ -60,6 +60,7 @@ import { collection, updateDoc } from "firebase/firestore";
 import { useCollection } from "@/firebase";
 import { isSubscriptionBlocked } from '@/lib/subscription';
 import { billingState } from '@/lib/saas-billing';
+import { canViewBusinessBilling } from '@/lib/billing-audience';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 
@@ -108,7 +109,7 @@ export function AppSidebar() {
   const { data: colmado } = useDoc(colmadoRef);
   const planRef = useMemoFirebase(() => colmado?.rootColmadoId ? doc(db, 'colmados', colmado.rootColmadoId) : null, [db, colmado?.rootColmadoId]);
   const { data: rootPlan } = useDoc(planRef);
-  const subscription = rootPlan || colmado;
+  const subscription = colmado?.rootColmadoId && colmado.rootColmadoId !== colmado.id ? rootPlan : colmado;
   const platformConfigRef = useMemoFirebase(() => doc(db, 'platformConfig', 'general'), [db]);
   const { data: platformConfig } = useDoc(platformConfigRef);
   const freeModules: string[] = Array.isArray(platformConfig?.freeModules) ? platformConfig.freeModules : ['independent-audits','hr','business-market'];
@@ -135,6 +136,7 @@ export function AppSidebar() {
   );
 
   const isPlatformAdmin = mounted && isSuperAdmin(user?.email || null);
+  const canViewBilling = !!subscription && !isPlatformAdmin && profile?.isActive !== false && canViewBusinessBilling(subscription, user?.uid, profile?.role);
   const cardNoticeStartDate = String(subscription?.paypalPlan1NoticeStartDate || '');
   const cardNoticeDue = subscription?.paypalPlan1Enabled === true && /^\d{4}-\d{2}-\d{2}$/.test(cardNoticeStartDate) && subscription?.paypalPlan1SubscriptionStatus !== 'ACTIVE' && !!todayInDR && cardNoticeStartDate <= todayInDR;
 
@@ -143,9 +145,12 @@ export function AppSidebar() {
   }, [cardNoticeDue]);
 
   useEffect(() => {
-    if (!mounted || !subscription?.id || subscription?.paymentReminderEnabled !== true || cardNoticeDue || isPlatformAdmin || !['Admin','Supervisor'].includes(profile?.role)) return;
+    if (!mounted || !subscription?.id || subscription?.paymentReminderEnabled !== true || cardNoticeDue || !canViewBilling) {
+      setPaymentReminderOpen(false);
+      return;
+    }
     const frequencyMs = Math.max(1, Number(subscription.paymentReminderFrequencyMinutes || 60)) * 60_000;
-    const key = `colmado-payment-reminder:${subscription.id}:${subscription.paymentReminderUpdatedAt || 'default'}`;
+    const key = `colmado-payment-reminder:${subscription.id}:${user?.uid}:${subscription.paymentReminderUpdatedAt || 'default'}`;
     const checkReminder = () => {
       const lastShown = Number(localStorage.getItem(key) || 0);
       if (!lastShown || Date.now() - lastShown >= frequencyMs) {
@@ -156,15 +161,15 @@ export function AppSidebar() {
     checkReminder();
     const timer = window.setInterval(checkReminder, Math.min(60_000, frequencyMs));
     return () => window.clearInterval(timer);
-  }, [mounted, subscription?.id, subscription?.paymentReminderEnabled, subscription?.paymentReminderFrequencyMinutes, subscription?.paymentReminderUpdatedAt, cardNoticeDue, isPlatformAdmin, profile?.role]);
+  }, [mounted, subscription?.id, subscription?.paymentReminderEnabled, subscription?.paymentReminderFrequencyMinutes, subscription?.paymentReminderUpdatedAt, cardNoticeDue, canViewBilling, user?.uid]);
 
   useEffect(() => {
-    if (!mounted || !subscription?.id || !cardNoticeDue || isPlatformAdmin || profile?.role !== 'Admin') {
+    if (!mounted || !subscription?.id || !cardNoticeDue || !canViewBilling) {
       setCardReminderOpen(false);
       return;
     }
     const frequencyMs = Math.max(1, Number(subscription.paymentReminderFrequencyMinutes || 60)) * 60_000;
-    const key = `colmado-card-reminder:${subscription.id}:${cardNoticeStartDate}`;
+    const key = `colmado-card-reminder:${subscription.id}:${user?.uid}:${cardNoticeStartDate}`;
     const checkReminder = () => {
       const lastShown = Number(localStorage.getItem(key) || 0);
       if (!lastShown || Date.now() - lastShown >= frequencyMs) {
@@ -175,7 +180,7 @@ export function AppSidebar() {
     checkReminder();
     const timer = window.setInterval(checkReminder, Math.min(60_000, frequencyMs));
     return () => window.clearInterval(timer);
-  }, [mounted, subscription?.id, subscription?.paymentReminderFrequencyMinutes, cardNoticeDue, cardNoticeStartDate, isPlatformAdmin, profile?.role]);
+  }, [mounted, subscription?.id, subscription?.paymentReminderFrequencyMinutes, cardNoticeDue, cardNoticeStartDate, canViewBilling, user?.uid]);
 
   // REDIRECCIÓN SI ESTÁ SUSPENDIDO
   useEffect(() => {
@@ -288,7 +293,7 @@ export function AppSidebar() {
           <h2>Menú Principal</h2>
           <p>Navegación del sistema operativo Colmadom</p>
         </div>
-        {billing.showNotice && !isPlatformAdmin && ['Admin','Supervisor'].includes(profile?.role) && (
+        {billing.showNotice && canViewBilling && (
           <div className={cn("px-3 pb-2",state==='collapsed'&&"px-1")}>
             <Alert className={cn("border-orange-400 bg-orange-50 text-orange-950",billing.overdue&&"border-red-500 bg-red-50 text-red-950",state==='collapsed'&&"p-2")}>
               <CalendarClock className="h-4 w-4"/>
@@ -296,7 +301,7 @@ export function AppSidebar() {
             </Alert>
           </div>
         )}
-        {subscription?.suspensionNoticeEnabled === true && !isPlatformAdmin && (
+        {subscription?.suspensionNoticeEnabled === true && canViewBilling && (
           <div className={cn("px-3 pb-2",state==='collapsed'&&"px-1")}>
             <Alert className={cn("border-2 border-red-600 bg-red-50 text-red-950 shadow-lg",state==='collapsed'&&"p-2")}>
               <AlertTriangle className="h-4 w-4"/>
@@ -361,7 +366,7 @@ export function AppSidebar() {
               </SidebarMenuButton>
             </SidebarMenuItem>
           ) : (
-            (profile?.role === 'Admin' || profile?.role === 'Supervisor') && (
+            canViewBilling && (
               <SidebarMenuItem>
                 <SidebarMenuButton asChild tooltip="Pagos" className={cn("h-10 rounded-xl", pathname === '/billing' ? "bg-emerald-500 text-white" : "hover:bg-emerald-50 text-emerald-600")}>
                   <Link href="/billing" className="flex items-center gap-3">

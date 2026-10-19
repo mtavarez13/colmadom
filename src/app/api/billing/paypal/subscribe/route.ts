@@ -1,6 +1,6 @@
 import { NextRequest,NextResponse } from 'next/server';
 import { adminDb } from '@/lib/firebase-admin';
-import { apiError,requireOwner } from '@/lib/server-auth';
+import { apiError,requireBillingUser } from '@/lib/server-auth';
 import { paypalRequest } from '@/lib/paypal';
 
 export const runtime='nodejs';
@@ -9,7 +9,7 @@ const santoDomingoDate=()=>new Intl.DateTimeFormat('en-CA',{timeZone:'America/Sa
 
 export async function POST(request:NextRequest){
  try{
-  const {identity,rootColmadoId}=await requireOwner(request),body=await request.json(),subscriptionId=String(body.subscriptionId||'').trim();
+  const {identity,rootColmadoId}=await requireBillingUser(request),body=await request.json(),subscriptionId=String(body.subscriptionId||'').trim();
   if(!/^[A-Z0-9-]{8,40}$/i.test(subscriptionId))return NextResponse.json({error:'Identificador de suscripción inválido.'},{status:400});
   const storeRef=adminDb.doc('colmados/'+rootColmadoId),storeSnap=await storeRef.get();
   if(!storeSnap.exists)return NextResponse.json({error:'No se encontró el negocio asociado.'},{status:404});

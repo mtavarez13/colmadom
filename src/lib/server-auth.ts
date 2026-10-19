@@ -1,5 +1,6 @@
 import { NextRequest } from 'next/server';
 import { adminAuth, adminDb } from '@/lib/firebase-admin';
+import { canViewBusinessBilling } from '@/lib/billing-audience';
 
 const PLATFORM_ADMINS = new Set([
   'admin@colmadom.com',
@@ -30,6 +31,19 @@ export async function requireOwner(request: NextRequest) {
     adminDb.doc(`colmados/${rootColmadoId}`).get(),
   ]);
   if (!store.exists || !root.exists || store.data()?.isDeleted === true || root.data()?.isDeleted === true || store.data()?.isActive === false || root.data()?.isActive === false) throw new Error('FORBIDDEN');
+  return { identity, profile, rootColmadoId };
+}
+
+export async function requireBillingUser(request: NextRequest) {
+  const identity = await requireIdentity(request);
+  const profile = (await adminDb.doc(`userProfiles/${identity.uid}`).get()).data();
+  if (!profile || profile.isActive === false || !profile.colmadoId) throw new Error('FORBIDDEN');
+  const colmadoId = String(profile.colmadoId);
+  const store = await adminDb.doc(`colmados/${colmadoId}`).get();
+  if (!store.exists || store.data()?.isDeleted === true || store.data()?.isActive === false) throw new Error('FORBIDDEN');
+  const rootColmadoId = String(store.data()?.rootColmadoId || colmadoId);
+  const root = rootColmadoId === colmadoId ? store : await adminDb.doc(`colmados/${rootColmadoId}`).get();
+  if (!root.exists || root.data()?.isDeleted === true || root.data()?.isActive === false || !canViewBusinessBilling(root.data(), identity.uid, profile.role)) throw new Error('FORBIDDEN');
   return { identity, profile, rootColmadoId };
 }
 
