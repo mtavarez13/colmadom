@@ -35,8 +35,8 @@ export async function requireOwner(request: NextRequest) {
 
 export function apiError(error: unknown) {
   const message = error instanceof Error ? error.message : 'UNKNOWN';
-  if (message === 'FIREBASE_SERVICE_ACCOUNT_INVALID') return { status: 503, message: 'La cuenta de servicio de Firebase configurada no es válida. Importa nuevamente FIREBASE_SERVICE_ACCOUNT_BASE64 y vuelve a desplegar.' };
-  if (/default credentials|could not load/i.test(message)) return { status: 503, message: 'Falta FIREBASE_SERVICE_ACCOUNT_BASE64 en las variables de entorno de Hostinger. Importa el archivo .env privado y vuelve a desplegar.' };
+  if (message === 'FIREBASE_SERVICE_ACCOUNT_INVALID') return { status: 503, message: 'La cuenta de servicio de Firebase no es válida. Revisa FIREBASE_SERVICE_ACCOUNT_JSON o FIREBASE_SERVICE_ACCOUNT_BASE64 en las variables de entorno de Hostinger y vuelve a desplegar.' };
+  if (/default credentials|could not load/i.test(message)) return { status: 503, message: 'Falta configurar la cuenta de servicio de Firebase en Hostinger. Añade FIREBASE_SERVICE_ACCOUNT_JSON o FIREBASE_SERVICE_ACCOUNT_BASE64 en Variables de entorno y vuelve a desplegar.' };
   if (message === 'UNAUTHENTICATED') return { status: 401, message: 'Inicia sesión para continuar.' };
   if (message === 'FORBIDDEN') return { status: 403, message: 'No tienes permiso para realizar esta acción.' };
   return { status: 500, message: 'No se pudo completar la operación.' };
