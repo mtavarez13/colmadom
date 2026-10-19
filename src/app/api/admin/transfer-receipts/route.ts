@@ -1,6 +1,7 @@
 import { NextRequest,NextResponse } from 'next/server';
 import { adminDb } from '@/lib/firebase-admin';
 import { apiError,requirePlatformAdmin } from '@/lib/server-auth';
+import { pendingMonthsAfterPayment } from '@/lib/saas-billing';
 export const runtime='nodejs';
 export async function POST(request:NextRequest){
  try{
@@ -12,9 +13,9 @@ export async function POST(request:NextRequest){
    const now=new Date().toISOString(),status=decision==='approve'?'Approved':'Rejected';
    tx.update(receiptRef,{status,reviewedAt:now,reviewedBy:admin.uid,reviewedByEmail:admin.email||'',updatedAt:now});
    if(decision==='approve'){
-    const storeRef=adminDb.doc('colmados/'+receipt.tenantId);await tx.get(storeRef);
-    tx.set(adminDb.doc('payments/'+receiptId),{id:receiptId,provider:'BANK_TRANSFER',providerTransactionId:receiptId,userId:receipt.userId,tenantId:receipt.tenantId,planId:receipt.planId,amount:receipt.amount,currency:receipt.currency||'DOP',status:'COMPLETED',receiptId,monthsCovered:Number(receipt.monthsCovered||1),coverageFromMonth:receipt.coverageFromMonth,coverageThroughMonth:receipt.coverageThroughMonth,prorationAmount:Number(receipt.prorationAmount||0),createdAt:now,approvedBy:admin.uid});
-    tx.update(storeRef,{subscriptionStatus:'Active',subscriptionStatusCode:'ACTIVO',planId:receipt.planId,billingPaidThroughMonth:receipt.coverageThroughMonth||new Date().toISOString().slice(0,7),billingProrationPending:false,billingLastPaymentAt:now,billingLastPaymentAmount:receipt.amount,updatedAt:now});
+    const storeRef=adminDb.doc('colmados/'+receipt.tenantId),storeSnap=await tx.get(storeRef),store=storeSnap.data()||{},monthsCovered=Number(receipt.monthsCovered||1),pendingAfter=pendingMonthsAfterPayment(store,monthsCovered);
+    tx.set(adminDb.doc('payments/'+receiptId),{id:receiptId,provider:'BANK_TRANSFER',providerTransactionId:receiptId,userId:receipt.userId,tenantId:receipt.tenantId,planId:receipt.planId,amount:receipt.amount,currency:receipt.currency||'DOP',status:'COMPLETED',receiptId,monthsCovered,coverageFromMonth:receipt.coverageFromMonth,coverageThroughMonth:receipt.coverageThroughMonth,prorationAmount:Number(receipt.prorationAmount||0),createdAt:now,approvedBy:admin.uid});
+    tx.update(storeRef,{subscriptionStatus:'Active',subscriptionStatusCode:'ACTIVO',planId:receipt.planId,billingPaidThroughMonth:receipt.coverageThroughMonth||new Date().toISOString().slice(0,7),billingProrationPending:false,billingLastPaymentAt:now,billingLastPaymentAmount:receipt.amount,...(pendingAfter===undefined?{}:{billingPendingInstallments:pendingAfter,paypalPlan1PendingMonths:pendingAfter}),updatedAt:now});
    }
    tx.create(adminDb.collection('auditLogs').doc(),{actorUid:admin.uid,actorEmail:admin.email||'',action:decision==='approve'?'TRANSFER_APPROVED':'TRANSFER_REJECTED',targetType:'transferReceipt',targetId:receiptId,tenantId:receipt.tenantId,createdAt:now});
    return {alreadyProcessed:false,status};

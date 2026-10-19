@@ -2,6 +2,7 @@ import { NextRequest,NextResponse } from 'next/server';
 import { adminDb } from '@/lib/firebase-admin';
 import { apiError,requireOwner } from '@/lib/server-auth';
 import { paypalRequest } from '@/lib/paypal';
+import { pendingMonthsAfterPayment } from '@/lib/saas-billing';
 export const runtime='nodejs';
 export async function POST(request:NextRequest){
  try{
@@ -12,9 +13,9 @@ export async function POST(request:NextRequest){
   const now=new Date().toISOString(),paymentId=String(detail.id);
   await adminDb.runTransaction(async tx=>{
    const paymentRef=adminDb.doc('payments/'+paymentId),payment=await tx.get(paymentRef);if(payment.exists)return;
-   const data=saved.data()!,storeRef=adminDb.doc('colmados/'+rootColmadoId);await tx.get(storeRef);
-   tx.create(paymentRef,{id:paymentId,provider:'PAYPAL',providerTransactionId:paymentId,paypalOrderId:orderId,userId:identity.uid,tenantId:rootColmadoId,planId:data.planId,amount:Number(detail.amount.value),currency:detail.amount.currency_code,status:'COMPLETED',monthsCovered:Number(data.monthsCovered||1),coverageFromMonth:data.coverageFromMonth,coverageThroughMonth:data.coverageThroughMonth,prorationAmount:Number(data.prorationAmount||0),createdAt:now});
-   tx.update(storeRef,{subscriptionStatus:'Active',subscriptionStatusCode:'ACTIVO',planId:data.planId,billingPaidThroughMonth:data.coverageThroughMonth,billingProrationPending:false,billingLastPaymentAt:now,billingLastPaymentAmount:Number(detail.amount.value),updatedAt:now});
+   const data=saved.data()!,storeRef=adminDb.doc('colmados/'+rootColmadoId),storeSnap=await tx.get(storeRef),store=storeSnap.data()||{},monthsCovered=Number(data.monthsCovered||1),pendingAfter=pendingMonthsAfterPayment(store,monthsCovered);
+   tx.create(paymentRef,{id:paymentId,provider:'PAYPAL',providerTransactionId:paymentId,paypalOrderId:orderId,userId:identity.uid,tenantId:rootColmadoId,planId:data.planId,amount:Number(detail.amount.value),currency:detail.amount.currency_code,status:'COMPLETED',monthsCovered,coverageFromMonth:data.coverageFromMonth,coverageThroughMonth:data.coverageThroughMonth,prorationAmount:Number(data.prorationAmount||0),createdAt:now});
+   tx.update(storeRef,{subscriptionStatus:'Active',subscriptionStatusCode:'ACTIVO',planId:data.planId,billingPaidThroughMonth:data.coverageThroughMonth,billingProrationPending:false,billingLastPaymentAt:now,billingLastPaymentAmount:Number(detail.amount.value),...(pendingAfter===undefined?{}:{billingPendingInstallments:pendingAfter,paypalPlan1PendingMonths:pendingAfter}),updatedAt:now});
    tx.update(orderRef,{status:'COMPLETED',captureId:paymentId,completedAt:now});
    tx.create(adminDb.collection('auditLogs').doc(),{actorUid:identity.uid,actorEmail:identity.email||'',action:'PAYPAL_PAYMENT_COMPLETED',targetType:'payment',targetId:paymentId,tenantId:rootColmadoId,createdAt:now});
   });

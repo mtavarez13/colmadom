@@ -6,7 +6,7 @@ export async function GET(request:NextRequest){
  try{
   await requirePlatformAdmin(request);
   const [stores,profiles,payments,receipts]=await Promise.all([adminDb.collection('colmados').get(),adminDb.collection('userProfiles').get(),adminDb.collection('payments').orderBy('createdAt','desc').limit(300).get(),adminDb.collection('transferReceipts').orderBy('createdAt','desc').limit(300).get()]);
-  return NextResponse.json({stores:stores.docs.map(d=>({id:d.id,...d.data()})),profiles:profiles.docs.map(d=>({id:d.id,...d.data()})),payments:payments.docs.map(d=>({id:d.id,...d.data()})),receipts:receipts.docs.map(d=>({id:d.id,...d.data()}))});
+  return NextResponse.json({stores:stores.docs.filter(d=>d.data().isDeleted!==true).map(d=>({id:d.id,...d.data()})),profiles:profiles.docs.map(d=>({id:d.id,...d.data()})),payments:payments.docs.map(d=>({id:d.id,...d.data()})),receipts:receipts.docs.map(d=>({id:d.id,...d.data()}))});
  }catch(error){const f=apiError(error);return NextResponse.json({error:f.message},{status:f.status});}
 }
 export async function POST(request:NextRequest){

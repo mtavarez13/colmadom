@@ -22,9 +22,19 @@ service cloud.firestore {
       let store = get(/databases/$(database)/documents/colmados/$(colmadoId)).data;
       let rootId = store.get('rootColmadoId', colmadoId);
       let plan = get(/databases/$(database)/documents/colmados/$(rootId)).data;
-      return plan.get('subscriptionStatus', 'Trial') == 'Active' ||
+      return (plan.get('subscriptionStatus', 'Trial') == 'Active' ||
         (plan.get('subscriptionStatus', 'Trial') == 'Trial' &&
-         (plan.get('trialEndAtMillis', 0) == 0 || plan.get('trialEndAtMillis', 0) > request.time.toMillis()));
+         (plan.get('trialEndAtMillis', 0) == 0 || plan.get('trialEndAtMillis', 0) > request.time.toMillis()))) &&
+        store.get('isDeleted', false) != true && plan.get('isDeleted', false) != true &&
+        store.get('isActive', true) != false && plan.get('isActive', true) != false;
+    }
+
+    function isStoreAvailable(colmadoId) {
+      let store = get(/databases/$(database)/documents/colmados/$(colmadoId)).data;
+      let rootId = store.get('rootColmadoId', colmadoId);
+      let plan = get(/databases/$(database)/documents/colmados/$(rootId)).data;
+      return store.get('isDeleted', false) != true && plan.get('isDeleted', false) != true &&
+        store.get('isActive', true) != false && plan.get('isActive', true) != false;
     }
 
     function isStaffOf(colmadoId) {
@@ -44,6 +54,8 @@ service cloud.firestore {
       return isPlatformAdmin() || (
         isSignedIn() &&
         exists(/databases/$(database)/documents/userProfiles/$(request.auth.uid)) &&
+        getUserData().get('isActive', true) == true &&
+        isStoreAvailable(colmadoId) &&
         getUserData().get('role', '') != 'Driver' &&
         getUserData().get('role', '') != 'Contable' &&
         (getUserData().get('colmadoId', '') == colmadoId ||

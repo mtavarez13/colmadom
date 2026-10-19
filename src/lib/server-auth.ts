@@ -23,7 +23,14 @@ export async function requireOwner(request: NextRequest) {
   const identity = await requireIdentity(request);
   const profile = (await adminDb.doc(`userProfiles/${identity.uid}`).get()).data();
   if (!profile || profile.isActive === false || profile.role !== 'Admin' || !profile.colmadoId) throw new Error('FORBIDDEN');
-  return { identity, profile, rootColmadoId: profile.rootColmadoId || profile.colmadoId };
+  const colmadoId = profile.colmadoId;
+  const rootColmadoId = profile.rootColmadoId || colmadoId;
+  const [store, root] = await Promise.all([
+    adminDb.doc(`colmados/${colmadoId}`).get(),
+    adminDb.doc(`colmados/${rootColmadoId}`).get(),
+  ]);
+  if (!store.exists || !root.exists || store.data()?.isDeleted === true || root.data()?.isDeleted === true || store.data()?.isActive === false || root.data()?.isActive === false) throw new Error('FORBIDDEN');
+  return { identity, profile, rootColmadoId };
 }
 
 export function apiError(error: unknown) {

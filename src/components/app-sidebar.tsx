@@ -63,6 +63,12 @@ import { billingState } from '@/lib/saas-billing';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 
+function santoDomingoToday() {
+  const parts = new Intl.DateTimeFormat('en-US', { timeZone: 'America/Santo_Domingo', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date());
+  const datePart = (type: string) => parts.find(part => part.type === type)?.value || '';
+  return `${datePart('year')}-${datePart('month')}-${datePart('day')}`;
+}
+
 export function AppSidebar() {
   const { user } = useUser();
   const auth = useAuth();
@@ -71,10 +77,15 @@ export function AppSidebar() {
   const router = useRouter();
   const [mounted, setMounted] = useState(false);
   const [paymentReminderOpen, setPaymentReminderOpen] = useState(false);
+  const [cardReminderOpen, setCardReminderOpen] = useState(false);
+  const [todayInDR, setTodayInDR] = useState('');
   const { state } = useSidebar();
 
   useEffect(() => {
     setMounted(true);
+    setTodayInDR(santoDomingoToday());
+    const timer = window.setInterval(() => setTodayInDR(santoDomingoToday()), 60_000);
+    return () => window.clearInterval(timer);
   }, []);
 
   const isSuperAdmin = (emailAddr: string | null) => 
@@ -124,9 +135,15 @@ export function AppSidebar() {
   );
 
   const isPlatformAdmin = mounted && isSuperAdmin(user?.email || null);
+  const cardNoticeStartDate = String(subscription?.paypalPlan1NoticeStartDate || '');
+  const cardNoticeDue = subscription?.paypalPlan1Enabled === true && /^\d{4}-\d{2}-\d{2}$/.test(cardNoticeStartDate) && subscription?.paypalPlan1SubscriptionStatus !== 'ACTIVE' && !!todayInDR && cardNoticeStartDate <= todayInDR;
 
   useEffect(() => {
-    if (!mounted || !subscription?.id || subscription?.paymentReminderEnabled !== true || isPlatformAdmin || !['Admin','Supervisor'].includes(profile?.role)) return;
+    if (cardNoticeDue) setPaymentReminderOpen(false);
+  }, [cardNoticeDue]);
+
+  useEffect(() => {
+    if (!mounted || !subscription?.id || subscription?.paymentReminderEnabled !== true || cardNoticeDue || isPlatformAdmin || !['Admin','Supervisor'].includes(profile?.role)) return;
     const frequencyMs = Math.max(1, Number(subscription.paymentReminderFrequencyMinutes || 60)) * 60_000;
     const key = `colmado-payment-reminder:${subscription.id}:${subscription.paymentReminderUpdatedAt || 'default'}`;
     const checkReminder = () => {
@@ -139,11 +156,30 @@ export function AppSidebar() {
     checkReminder();
     const timer = window.setInterval(checkReminder, Math.min(60_000, frequencyMs));
     return () => window.clearInterval(timer);
-  }, [mounted, subscription?.id, subscription?.paymentReminderEnabled, subscription?.paymentReminderFrequencyMinutes, subscription?.paymentReminderUpdatedAt, isPlatformAdmin, profile?.role]);
+  }, [mounted, subscription?.id, subscription?.paymentReminderEnabled, subscription?.paymentReminderFrequencyMinutes, subscription?.paymentReminderUpdatedAt, cardNoticeDue, isPlatformAdmin, profile?.role]);
+
+  useEffect(() => {
+    if (!mounted || !subscription?.id || !cardNoticeDue || isPlatformAdmin || profile?.role !== 'Admin') {
+      setCardReminderOpen(false);
+      return;
+    }
+    const frequencyMs = Math.max(1, Number(subscription.paymentReminderFrequencyMinutes || 60)) * 60_000;
+    const key = `colmado-card-reminder:${subscription.id}:${cardNoticeStartDate}`;
+    const checkReminder = () => {
+      const lastShown = Number(localStorage.getItem(key) || 0);
+      if (!lastShown || Date.now() - lastShown >= frequencyMs) {
+        setCardReminderOpen(true);
+        localStorage.setItem(key, String(Date.now()));
+      }
+    };
+    checkReminder();
+    const timer = window.setInterval(checkReminder, Math.min(60_000, frequencyMs));
+    return () => window.clearInterval(timer);
+  }, [mounted, subscription?.id, subscription?.paymentReminderFrequencyMinutes, cardNoticeDue, cardNoticeStartDate, isPlatformAdmin, profile?.role]);
 
   // REDIRECCIÓN SI ESTÁ SUSPENDIDO
   useEffect(() => {
-    if (mounted && isSubscriptionBlocked(subscription) && pathname !== '/billing' && !isPlatformAdmin && !currentModuleIsFree) {
+    if (mounted && isSubscriptionBlocked(subscription) && !pathname.startsWith('/billing') && !isPlatformAdmin && !currentModuleIsFree) {
       router.replace('/billing');
     }
   }, [subscription, mounted, pathname, isPlatformAdmin, currentModuleIsFree, router]);
@@ -209,6 +245,15 @@ export function AppSidebar() {
           <DialogDescription className="pt-2 text-base text-foreground">{subscription?.paymentReminderMessage || 'Tienes un pago pendiente. Realízalo antes de la fecha límite para evitar la suspensión del sistema.'}</DialogDescription>
         </DialogHeader>
         <DialogFooter><Button variant="outline" onClick={()=>setPaymentReminderOpen(false)}>Entendido</Button><Button asChild><Link href="/billing">Ver suscripción</Link></Button></DialogFooter>
+      </DialogContent>
+    </Dialog>
+    <Dialog open={cardReminderOpen} onOpenChange={setCardReminderOpen}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2 text-orange-700"><CreditCard className="h-5 w-5"/>Suscripción con tarjeta</DialogTitle>
+          <DialogDescription className="pt-2 text-base text-foreground">Ya puedes suscribir tu colmado con tarjeta. Revisa tu plan y las cuotas pendientes antes de confirmar el pago.</DialogDescription>
+        </DialogHeader>
+        <DialogFooter><Button variant="outline" onClick={() => setCardReminderOpen(false)}>Más tarde</Button><Button asChild onClick={() => setCardReminderOpen(false)}><Link href="/billing/plan1">Ver suscripción</Link></Button></DialogFooter>
       </DialogContent>
     </Dialog>
     <Sidebar collapsible="icon" className="border-r-2 shadow-2xl">

@@ -3,6 +3,8 @@ import { adminDb } from '@/lib/firebase-admin';
 import { apiError,requireOwner } from '@/lib/server-auth';
 import { billingState,paymentCoverage } from '@/lib/saas-billing';
 export const runtime='nodejs';
+const PAYPAL_PLAN1_ID='P-3TB64314LH169562MNLKXWQA';
+const santoDomingoDate=()=>new Intl.DateTimeFormat('en-CA',{timeZone:'America/Santo_Domingo',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
 export async function GET(request:NextRequest){
  try{
   const {rootColmadoId}=await requireOwner(request);
@@ -10,8 +12,8 @@ export async function GET(request:NextRequest){
    adminDb.doc('platformConfig/general').get(),adminDb.doc('colmados/'+rootColmadoId).get(),
    adminDb.collection('plans').where('isActive','==',true).get(),adminDb.collection('bankAccounts').where('isActive','==',true).get()
   ]);
-  const storeData:any={id:store.id,...store.data()},billing=billingState(storeData),quote=paymentCoverage(storeData,1);
+  const storeData:any={id:store.id,...store.data()},billing=billingState(storeData),quote=paymentCoverage(storeData,1),today=santoDomingoDate(),noticeStartDate=String(storeData.paypalPlan1NoticeStartDate||''),plan1Enabled=storeData.paypalPlan1Enabled===true,configuredPending=storeData.billingPendingInstallments??storeData.paypalPlan1PendingMonths,pendingMonths=Number.isInteger(Number(configuredPending))?Number(configuredPending):billing.monthsOwed,plan1={enabled:plan1Enabled,noticeStartDate,pendingMonths:Math.max(0,Math.min(24,pendingMonths)),planId:PAYPAL_PLAN1_ID,subscriptionId:String(storeData.paypalPlan1SubscriptionId||''),subscriptionStatus:String(storeData.paypalPlan1SubscriptionStatus||''),visible:plan1Enabled&&/^\d{4}-\d{2}-\d{2}$/.test(noticeStartDate)&&noticeStartDate<=today};
   return NextResponse.json({paymentMethods:config.data()?.paymentMethods||{bankTransfer:true,paypal:false},currency:config.data()?.currency||'DOP',
-   store:storeData,billing,quote,plans:plans.docs.map(d=>({id:d.id,...d.data()})),bankAccounts:accounts.docs.map(d=>({id:d.id,...d.data()}))});
+   store:storeData,billing,quote,plan1,plans:plans.docs.map(d=>({id:d.id,...d.data()})),bankAccounts:accounts.docs.map(d=>({id:d.id,...d.data()}))});
  }catch(error){const f=apiError(error);return NextResponse.json({error:f.message},{status:f.status});}
 }
