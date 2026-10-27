@@ -490,7 +490,7 @@ export default function AdminSaaSPage() {
         <div className="flex gap-2">
         <Button asChild variant="outline" className="h-12 font-bold"><NextLink href="/admin/global-inventory"><Boxes className="mr-2 h-4 w-4" />Inventario general</NextLink></Button>
         <Button asChild variant="outline" className="h-12 font-bold"><NextLink href="/admin/subscriptions"><CreditCard className="mr-2 h-4 w-4" />Contabilidad SaaS · MRR</NextLink></Button>
-        <Button asChild variant="outline" className="h-12 font-bold"><NextLink href="/admin/payment-settings"><Settings className="mr-2 h-4 w-4" />Planes y módulos gratis</NextLink></Button>
+        <Button asChild variant="outline" className="h-12 font-bold"><NextLink href="/admin/payment-settings"><Settings className="mr-2 h-4 w-4" />Planes, módulos y farmacia</NextLink></Button>
         <Dialog>
           <DialogTrigger asChild><Button size="lg" className="gap-2 font-bold h-12 rounded-2xl shadow-xl bg-primary text-white"><Plus className="h-5 w-5" /> Registrar Nueva Unidad</Button></DialogTrigger>
           <DialogContent className="sm:max-w-2xl rounded-[2rem]">
