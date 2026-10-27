@@ -173,6 +173,7 @@ export default function AdminSaaSPage() {
   const [editMasterKey, setEditMasterKey] = useState("");
   const [editStatus, setEditStatus] = useState("Active");
   const [editBusinessType, setEditBusinessType] = useState("Standard");
+  const [editPharmacyEnabled, setEditPharmacyEnabled] = useState(false);
   const [editMonthlyFee, setEditMonthlyFee] = useState("1500");
   const [editIsAutonomous, setEditIsAutonomous] = useState(false);
   const [editSystemNotice, setEditSystemNotice] = useState("");
@@ -254,6 +255,7 @@ export default function AdminSaaSPage() {
       billingProrationPending: true,
       billingConfigured: true,
       businessType: "Standard",
+      pharmacyEnabled: false,
       masterKey: storeMasterKey,
       fiscalEnabled: storeFiscalEnabled,
       fiscalMode: storeFiscalEnabled ? 'traditional' : 'disabled',
@@ -304,6 +306,7 @@ export default function AdminSaaSPage() {
     setEditMasterKey(store.masterKey || "");
     setEditStatus(store.subscriptionStatus || "Active");
     setEditBusinessType(store.businessType || "Standard");
+    setEditPharmacyEnabled(store.pharmacyEnabled === true);
     setEditMonthlyFee(store.monthlyFee?.toString() || "1500");
     setEditIsAutonomous(!!store.isAutonomous);
     setEditSystemNotice(store.systemNotice || "");
@@ -341,6 +344,7 @@ export default function AdminSaaSPage() {
       subscriptionStatus: editStatus,
       printerPaperWidth: editPrinterWidth,
       businessType: editBusinessType,
+      pharmacyEnabled: editPharmacyEnabled,
       monthlyFee: Number(editMonthlyFee),
       ...(!selectedStore.rootColmadoId || selectedStore.rootColmadoId === selectedStore.id ? { billingMonthlyFee: Number(editMonthlyFee) } : {}),
       isAutonomous: editIsAutonomous,
@@ -360,6 +364,13 @@ export default function AdminSaaSPage() {
       ...Object.fromEntries(EXTRA_ECF_TYPES.flatMap(type=>{const range=extraEcfRanges[type];return range?.next&&range?.end?[[`ecf${type}NextSequence`,Math.max(1,Number(range.next))],[`ecf${type}SequenceEnd`,Math.max(1,Number(range.end))],[`ecf${type}SequenceExpiry`,range.expiry]]:[]})),
       updatedAt: new Date().toISOString()
     });
+
+    if (!selectedStore.rootColmadoId || selectedStore.rootColmadoId === selectedStore.id) {
+      allColmados?.filter(store => store.id !== selectedStore.id && store.rootColmadoId === selectedStore.id)
+        .forEach(store => updateDocumentNonBlocking(doc(db, 'colmados', store.id), {
+          pharmacyEnabled: editPharmacyEnabled, updatedAt: new Date().toISOString()
+        }));
+    }
 
     if (editOwnerEmail) {
       getDocs(query(collection(db, "userProfiles"), where("email", "==", editOwnerEmail.toLowerCase()), limit(1)))
@@ -410,6 +421,7 @@ export default function AdminSaaSPage() {
         trialEndAtMillis: root.trialEndAtMillis || null,
         printerPaperWidth: branchPrinterWidth,
         monthlyFee: 0, businessType: root.businessType || 'Standard',
+        pharmacyEnabled: root.pharmacyEnabled === true,
         fiscalEnabled: !!root.fiscalEnabled, fiscalMode: root.fiscalMode || (root.fiscalEnabled ? 'traditional' : 'disabled'),
         rnc: root.rnc || '', legalName: root.legalName || root.name || '', defaultEcfType: root.defaultEcfType || '32',
         electronicIssuerAuthorized: !!root.electronicIssuerAuthorized,
@@ -664,6 +676,10 @@ export default function AdminSaaSPage() {
                                   <SelectTrigger><SelectValue /></SelectTrigger>
                                   <SelectContent><SelectItem value="80mm">80 mm</SelectItem><SelectItem value="58mm">58 mm</SelectItem></SelectContent>
                                 </Select>
+                              </div>
+                              <div className="flex items-center justify-between gap-4 rounded-xl border border-blue-200 bg-blue-50 p-4">
+                                <div><Label className="font-bold">Ventas de farmacia a clientes registrados</Label><p className="text-xs text-muted-foreground">Habilita en POS y Mini Market el registro de pautas y la vista de reposición para el dueño.</p></div>
+                                <Switch checked={editPharmacyEnabled} onCheckedChange={setEditPharmacyEnabled} />
                               </div>
                             </div>
                             <div className="space-y-6">

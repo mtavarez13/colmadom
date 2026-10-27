@@ -31,6 +31,7 @@ import {
   Info,
   ShieldCheck as ShieldIcon,
   AlertTriangle
+  ,Pill
   ,CalendarClock
   ,Building2
 } from "lucide-react";
@@ -210,6 +211,7 @@ export function AppSidebar() {
     { id: 'independent-audits', icon: ClipboardCheck, label: "Inventarios Independientes", href: "/independent-audits" },
     { id: 'suppliers', icon: Truck, label: "Proveedores y Pagos", href: "/suppliers" },
     { id: 'customers', icon: Users, label: "Libretas (Fiaos)", href: "/customers" },
+    { id: 'pharmacy', icon: Pill, label: "Seguimiento farmacia", href: "/pharmacy", condition: profile?.role === 'Admin' && colmado?.pharmacyEnabled === true },
     { id: 'expenses', icon: Receipt, label: "Gastos y Nómina", href: "/expenses" },
     { id: 'reconciliation', icon: Calculator, label: "Cuadre de Caja", href: "/reconciliation" },
     { id: 'services', icon: Smartphone, label: "Recargas/Servicios", href: "/services" },

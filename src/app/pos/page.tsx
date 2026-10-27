@@ -61,6 +61,8 @@ import { parseVariableWeightBarcode } from "@/lib/barcode-utils";
 import { fiscalSnapshot } from "@/lib/dominican-fiscal";
 import { FiscalReceiptFooter } from "@/components/fiscal-receipt-footer";
 import { FiscalCustomerDialog } from "@/components/fiscal-customer-dialog";
+import { PharmacySaleDialog } from "@/components/pharmacy-sale-dialog";
+import { buildPharmacyFollowUps, emptyPharmacySelection } from "@/lib/pharmacy-follow-up";
 import { useWhatsAppPosNotifications } from "@/hooks/use-whatsapp-pos-notifications";
 
 export const dynamic = 'force-dynamic';
@@ -83,6 +85,8 @@ export default function POSPage() {
   const [isCheckoutProcessing, setIsCheckoutProcessing] = useState(false);
   const [isFiscalCustomerOpen, setIsFiscalCustomerOpen] = useState(false);
   const [fiscalCustomer, setFiscalCustomer] = useState<any>(null);
+  const [isPharmacyDialogOpen, setIsPharmacyDialogOpen] = useState(false);
+  const [pharmacySelection, setPharmacySelection] = useState(emptyPharmacySelection);
   const lastScannedCodeRef = useRef<string>("");
 
   const [isClosingOpen, setIsClosingOpen] = useState(false);
@@ -154,6 +158,12 @@ export default function POSPage() {
     return doc(db, "colmados", profile.colmadoId);
   }, [db, profile?.colmadoId]);
   const { data: colmado } = useDoc(colmadoRef);
+  useEffect(() => {
+    if (cart.length === 0 || colmado?.pharmacyEnabled === false) {
+      setPharmacySelection(emptyPharmacySelection());
+      setIsPharmacyDialogOpen(false);
+    }
+  }, [cart.length, colmado?.pharmacyEnabled]);
 
   const productsQuery = useMemoFirebase(() => {
     if (!profile?.colmadoId || !db) return null;
@@ -344,7 +354,22 @@ export default function POSPage() {
       fiadoAmount = partialPayments.fiado + (method === "Fiado" ? remainingToPay : 0);
     }
 
-    const customer = customerId ? customers?.find(c => c.id === customerId) : (selectedFiadoCustomer || null);
+    const pharmacyAllowed = colmado.pharmacyEnabled === true && ['Admin', 'Cajero'].includes(profile.role) && fiadoAmount === 0;
+    if (pharmacySelection.customerId && !pharmacyAllowed) {
+      toast({ variant: 'destructive', title: 'El seguimiento de farmacia requiere una venta de contado.' });
+      setIsCheckoutProcessing(false);
+      return;
+    }
+    let pharmacyFollowUps;
+    try {
+      pharmacyFollowUps = pharmacyAllowed ? buildPharmacyFollowUps(cart, pharmacySelection, new Date(now)) : [];
+    } catch (error) {
+      toast({ variant: 'destructive', title: 'Revisa la pauta registrada', description: error instanceof Error ? error.message : 'Datos incompletos.' });
+      setIsCheckoutProcessing(false);
+      return;
+    }
+
+    const customer = customerId ? customers?.find(c => c.id === customerId) : (selectedFiadoCustomer || (pharmacyAllowed && pharmacySelection.customerId ? customers?.find(c => c.id === pharmacySelection.customerId) || { id: pharmacySelection.customerId, firstName: pharmacySelection.customerName, lastName: '', phoneNumber: pharmacySelection.customerPhone } : null));
     const customerName = customer ? `${customer.firstName} ${customer.lastName}` : "Venta General";
     const previousDebt = Number(customer?.currentDebt) || 0;
     const customerDebt = (customer) ? previousDebt + fiadoAmount : previousDebt;
@@ -360,6 +385,10 @@ export default function POSPage() {
       paidAmount: paidWithAmount || (cardAmount + cashAmount), 
       changeGiven: changeGiven || 0, isComplete: true, 
       customerId: customer?.id || null, customerName, customerDebt, 
+      customerPhone: customer?.phoneNumber || '',
+      hasPharmacyFollowUp: pharmacyFollowUps.length > 0,
+      pharmacyFollowUps,
+      pharmacyFollowUpConsent: pharmacyFollowUps.length > 0 && pharmacySelection.followUpConsent,
       createdAt: now, cashRegisterSessionId: "active_session", items: [...cart],
       ...fiscalSnapshot(colmado, { items: cart, discountAmount, ecfType: effectiveFiscalCustomer ? '31' : (colmado.defaultEcfType || '32') }),
       buyerRnc: effectiveFiscalCustomer?.rnc || '', buyerLegalName: effectiveFiscalCustomer?.legalName || '', buyerCommercialName: effectiveFiscalCustomer?.commercialName || '',
@@ -415,11 +444,12 @@ export default function POSPage() {
       setCardTxnNumber("");
       setSelectedFiadoCustomer(null);
       setFiscalCustomer(null);
+      setPharmacySelection(emptyPharmacySelection());
       setPartialPayments({ cash: 0, card: 0, cardRef: "", fiado: 0 });
       setIsCheckoutProcessing(false);
       setLastSaleForPrint(null);
     }, 1200);
-  }, [cart, profile, colmado, user, db, toast, partialPayments, committedSoFar, subtotal, grossSubtotal, discountPercent, discountAmount, customers, selectedFiadoCustomer, remainingToPay, fiscalCustomer]);
+  }, [cart, profile, colmado, user, db, toast, partialPayments, committedSoFar, subtotal, grossSubtotal, discountPercent, discountAmount, customers, selectedFiadoCustomer, remainingToPay, fiscalCustomer, pharmacySelection]);
 
   const resetPartialPayments = () => {
     setPartialPayments({ cash: 0, card: 0, cardRef: "", fiado: 0 });
@@ -675,6 +705,7 @@ export default function POSPage() {
         <div className="p-8 bg-muted/30 border-t space-y-4 shrink-0">
            {profile?.role === 'Admin' && cart.length > 0 && <Button variant="outline" className="w-full font-bold" disabled={committedSoFar > 0} onClick={() => { setDiscountInput(String(discountPercent || '')); setDiscountKeyInput(''); setIsDiscountOpen(true); }}><Tag className="mr-2 h-4 w-4" /> {discountPercent ? `Descuento ${discountPercent}% · Editar` : 'Aplicar descuento %'}</Button>}
            {colmado?.fiscalEnabled&&<Button variant={fiscalCustomer?'default':'outline'} className="w-full font-bold" disabled={cart.length===0||committedSoFar>0} onClick={()=>setIsFiscalCustomerOpen(true)}><Receipt className="mr-2 h-4 w-4"/>{fiscalCustomer?`Valor fiscal: ${fiscalCustomer.legalName}`:'Factura con valor fiscal'}</Button>}
+           {colmado?.pharmacyEnabled === true && ['Admin', 'Cajero'].includes(profile?.role || '') && <Button variant="outline" className="w-full font-bold" disabled={cart.length === 0} onClick={() => setIsPharmacyDialogOpen(true)}><UserPlus className="mr-2 h-4 w-4" />{pharmacySelection.customerId ? `Cliente: ${pharmacySelection.customerName}` : 'Cliente de contado · Farmacia'}</Button>}
            {committedSoFar > 0 && (
               <div className="p-5 bg-white border-2 border-dashed border-primary/20 rounded-2xl space-y-2">
                  <p className="text-[10px] font-black uppercase text-muted-foreground">Pagos Parciales:</p>
@@ -709,6 +740,7 @@ export default function POSPage() {
 
       {/* DIALOGOS DE COBRO */}
       <FiscalCustomerDialog open={isFiscalCustomerOpen} onOpenChange={setIsFiscalCustomerOpen} onSelect={setFiscalCustomer} colmadoId={profile?.colmadoId}/>
+      {colmado?.pharmacyEnabled === true && profile?.colmadoId && <PharmacySaleDialog open={isPharmacyDialogOpen} onOpenChange={setIsPharmacyDialogOpen} colmadoId={profile.colmadoId} customers={customers || []} cart={cart} value={pharmacySelection} onChange={setPharmacySelection} />}
       <Dialog open={isDiscountOpen} onOpenChange={setIsDiscountOpen}><DialogContent><DialogHeader><DialogTitle>Descuento con clave maestra</DialogTitle><DialogDescription>Solo el dueño puede autorizar un descuento para este carrito.</DialogDescription></DialogHeader><div className="space-y-4"><div><Label htmlFor="pos-discount-percent">Descuento (%)</Label><Input id="pos-discount-percent" type="number" min="0" max="99.99" step="0.01" value={discountInput} onChange={event => setDiscountInput(event.target.value)} /></div><div><Label htmlFor="pos-discount-key">Clave maestra</Label><Input id="pos-discount-key" type="password" value={discountKeyInput} onChange={event => setDiscountKeyInput(event.target.value)} /></div></div><DialogFooter><Button onClick={applyDiscount}>Aplicar al carrito</Button></DialogFooter></DialogContent></Dialog>
       <Dialog open={isCashDialogOpen} onOpenChange={(open) => { setIsCashDialogOpen(open); if(!open) setCashReceived(""); }}>
         <DialogContent className="sm:max-w-md rounded-[2.5rem]">

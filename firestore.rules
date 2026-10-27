@@ -134,6 +134,7 @@ service cloud.firestore {
         request.resource.data.get('suspensionNoticeUpdatedAt', '') == resource.data.get('suspensionNoticeUpdatedAt', '') &&
         request.resource.data.get('additionalBranchFee', 0) == resource.data.get('additionalBranchFee', 0) &&
         request.resource.data.get('fiscalEnabled', false) == resource.data.get('fiscalEnabled', false) &&
+        request.resource.data.get('pharmacyEnabled', false) == resource.data.get('pharmacyEnabled', false) &&
         request.resource.data.get('fiscalMode', 'disabled') == resource.data.get('fiscalMode', 'disabled') &&
         request.resource.data.get('rnc', '') == resource.data.get('rnc', '') &&
         request.resource.data.get('legalName', '') == resource.data.get('legalName', '') &&

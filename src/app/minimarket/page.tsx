@@ -83,6 +83,8 @@ import { cn } from "@/lib/utils";
 import { fiscalSnapshot } from "@/lib/dominican-fiscal";
 import { FiscalReceiptFooter } from "@/components/fiscal-receipt-footer";
 import { FiscalCustomerDialog } from "@/components/fiscal-customer-dialog";
+import { PharmacySaleDialog } from "@/components/pharmacy-sale-dialog";
+import { buildPharmacyFollowUps, emptyPharmacySelection } from "@/lib/pharmacy-follow-up";
 
 export const dynamic = 'force-dynamic';
 
@@ -105,6 +107,8 @@ export default function MiniMarketPage() {
   const [isCheckoutProcessing, setIsCheckoutProcessing] = useState(false);
   const [isFiscalCustomerOpen, setIsFiscalCustomerOpen] = useState(false);
   const [fiscalCustomer, setFiscalCustomer] = useState<any>(null);
+  const [isPharmacyDialogOpen, setIsPharmacyDialogOpen] = useState(false);
+  const [pharmacySelection, setPharmacySelection] = useState(emptyPharmacySelection);
   
   // Payment Dialogs
   const [isCashDialogOpen, setIsCashDialogOpen] = useState(false);
@@ -177,6 +181,12 @@ export default function MiniMarketPage() {
     return doc(db, "colmados", profile.colmadoId);
   }, [db, profile?.colmadoId]);
   const { data: colmado } = useDoc(colmadoRef);
+  useEffect(() => {
+    if (cart.length === 0 || colmado?.pharmacyEnabled === false) {
+      setPharmacySelection(emptyPharmacySelection());
+      setIsPharmacyDialogOpen(false);
+    }
+  }, [cart.length, colmado?.pharmacyEnabled]);
 
   const productsQuery = useMemoFirebase(() => {
     if (!db || !profile?.colmadoId) return null;
@@ -432,7 +442,21 @@ export default function MiniMarketPage() {
       return;
     }
 
-    const customer = options.customerId ? customers?.find(c => c.id === options.customerId) : (selectedFiadoCustomer || null);
+    const pharmacyAllowed = colmado.pharmacyEnabled === true && ['Admin', 'Cajero'].includes(profile.role) && fiadoAmount === 0;
+    if (pharmacySelection.customerId && !pharmacyAllowed) {
+      toast({ variant: 'destructive', title: 'El seguimiento de farmacia requiere una venta de contado.' });
+      setIsCheckoutProcessing(false);
+      return;
+    }
+    let pharmacyFollowUps;
+    try {
+      pharmacyFollowUps = pharmacyAllowed ? buildPharmacyFollowUps(cart, pharmacySelection, new Date(now)) : [];
+    } catch (error) {
+      toast({ variant: 'destructive', title: 'Revisa la pauta registrada', description: error instanceof Error ? error.message : 'Datos incompletos.' });
+      setIsCheckoutProcessing(false);
+      return;
+    }
+    const customer = options.customerId ? customers?.find(c => c.id === options.customerId) : (selectedFiadoCustomer || (pharmacyAllowed && pharmacySelection.customerId ? customers?.find(c => c.id === pharmacySelection.customerId) || { id: pharmacySelection.customerId, firstName: pharmacySelection.customerName, lastName: '', phoneNumber: pharmacySelection.customerPhone } : null));
     const customerName = customer ? `${customer.firstName} ${customer.lastName}` : "Venta General";
     const previousDebt = Number(customer?.currentDebt) || 0;
     const customerDebt = (customer) ? previousDebt + fiadoAmount : previousDebt;
@@ -457,6 +481,10 @@ export default function MiniMarketPage() {
       customerId: customer?.id || null, 
       customerName,
       customerDebt,
+      customerPhone: customer?.phoneNumber || '',
+      hasPharmacyFollowUp: pharmacyFollowUps.length > 0,
+      pharmacyFollowUps,
+      pharmacyFollowUpConsent: pharmacyFollowUps.length > 0 && pharmacySelection.followUpConsent,
       createdAt: now, 
       cashRegisterSessionId: "active_session", 
       items: [...cart],
@@ -528,10 +556,11 @@ export default function MiniMarketPage() {
       setPartialPayments({ cash: 0, card: 0, cardRef: "", fiado: 0 });
       setSelectedFiadoCustomer(null);
       setFiscalCustomer(null);
+      setPharmacySelection(emptyPharmacySelection());
       setIsCheckoutProcessing(false);
       setLastSaleForPrint(null);
     }, 1200);
-  }, [cart, profile, colmado, user, db, toast, partialPayments, committedSoFar, subtotal, grossSubtotal, discountPercent, discountAmount, customers, selectedFiadoCustomer, fiscalCustomer]);
+  }, [cart, profile, colmado, user, db, toast, partialPayments, committedSoFar, subtotal, grossSubtotal, discountPercent, discountAmount, customers, selectedFiadoCustomer, fiscalCustomer, pharmacySelection]);
 
   const handleAddBreakdown = useCallback(() => {
     if (!selectedProductForWeight || !breakdownAmount) return;
@@ -866,6 +895,7 @@ export default function MiniMarketPage() {
 
             {profile?.role === 'Admin' && cart.length > 0 && <Button variant="outline" className="w-full font-bold" disabled={committedSoFar > 0} onClick={() => { setDiscountInput(String(discountPercent || '')); setDiscountKeyInput(''); setIsDiscountOpen(true); }}><Tag className="mr-2 h-4 w-4" /> {discountPercent ? `Descuento ${discountPercent}% · Editar` : 'Aplicar descuento %'}</Button>}
             {colmado?.fiscalEnabled&&<Button variant={fiscalCustomer?'default':'outline'} className="w-full font-bold" disabled={cart.length===0||committedSoFar>0} onClick={()=>setIsFiscalCustomerOpen(true)}><Receipt className="mr-2 h-4 w-4"/>{fiscalCustomer?`Valor fiscal: ${fiscalCustomer.legalName}`:'Factura con valor fiscal'}</Button>}
+            {colmado?.pharmacyEnabled === true && ['Admin', 'Cajero'].includes(profile?.role || '') && <Button variant="outline" className="w-full font-bold" disabled={cart.length === 0} onClick={() => setIsPharmacyDialogOpen(true)}>{pharmacySelection.customerId ? `Cliente: ${pharmacySelection.customerName}` : 'Cliente de contado · Farmacia'}</Button>}
             <div className="p-8 bg-primary/5 rounded-[2.5rem] border-4 border-primary/20 flex flex-col items-center justify-center text-center">
                <span className="text-xs font-black uppercase text-primary tracking-widest opacity-60">{discountAmount ? `Descuento -RD$${discountAmount.toLocaleString()} · Importe Total` : 'Importe Total'}</span>
                <span className="text-6xl font-black text-primary tracking-tighter">RD${subtotal.toLocaleString()}</span>
@@ -972,6 +1002,7 @@ export default function MiniMarketPage() {
                   
                   <div className="grid grid-cols-1 gap-3">
                     {colmado?.fiscalEnabled&&<Button variant={fiscalCustomer?'default':'outline'} className="h-14 rounded-2xl font-black" disabled={committedSoFar>0} onClick={()=>setIsFiscalCustomerOpen(true)}><Receipt className="mr-2 h-5 w-5"/>{fiscalCustomer?fiscalCustomer.legalName:'FACTURA CON VALOR FISCAL'}</Button>}
+                    {colmado?.pharmacyEnabled === true && ['Admin', 'Cajero'].includes(profile?.role || '') && <Button variant="outline" className="h-12 rounded-xl font-bold" onClick={() => setIsPharmacyDialogOpen(true)}>{pharmacySelection.customerId ? `Cliente: ${pharmacySelection.customerName}` : 'Cliente de contado · Farmacia'}</Button>}
                     <Button className="h-16 rounded-2xl bg-emerald-600 font-black text-xl gap-3 shadow-xl" onClick={() => { setIsCashDialogOpen(true); }}>
                       <Banknote className="h-6 w-6" /> COBRAR EFECTIVO
                     </Button>
@@ -993,6 +1024,7 @@ export default function MiniMarketPage() {
       <Dialog open={isDiscountOpen} onOpenChange={setIsDiscountOpen}><DialogContent><DialogHeader><DialogTitle>Descuento con clave maestra</DialogTitle><DialogDescription>Solo el dueño puede autorizar un descuento para este carrito.</DialogDescription></DialogHeader><div className="space-y-4"><div><Label htmlFor="fast-discount-percent">Descuento (%)</Label><Input id="fast-discount-percent" type="number" min="0" max="99.99" step="0.01" value={discountInput} onChange={event => setDiscountInput(event.target.value)} /></div><div><Label htmlFor="fast-discount-key">Clave maestra</Label><Input id="fast-discount-key" type="password" value={discountKeyInput} onChange={event => setDiscountKeyInput(event.target.value)} /></div></div><DialogFooter><Button onClick={applyDiscount}>Aplicar al carrito</Button></DialogFooter></DialogContent></Dialog>
       {/* EFECTIVO DIALOG */}
       <FiscalCustomerDialog open={isFiscalCustomerOpen} onOpenChange={setIsFiscalCustomerOpen} onSelect={setFiscalCustomer} colmadoId={profile?.colmadoId}/>
+      {colmado?.pharmacyEnabled === true && profile?.colmadoId && <PharmacySaleDialog open={isPharmacyDialogOpen} onOpenChange={setIsPharmacyDialogOpen} colmadoId={profile.colmadoId} customers={customers || []} cart={cart} value={pharmacySelection} onChange={setPharmacySelection} />}
       <Dialog open={isCashDialogOpen} onOpenChange={(open) => { setIsCashDialogOpen(open); if(!open) setCashReceived(""); }}>
         <DialogContent className="sm:max-w-md rounded-[2.5rem]">
           <DialogHeader><DialogTitle className="text-2xl font-black">Cobro Efectivo</DialogTitle></DialogHeader>
