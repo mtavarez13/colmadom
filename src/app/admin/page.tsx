@@ -330,10 +330,16 @@ export default function AdminSaaSPage() {
     setIsManagementOpen(true);
   };
 
-  const handleUpdateProfile = () => {
+  const handleUpdateProfile = async () => {
     if (!selectedStore || !db) return;
+    if (selectedStore.isDeleted === true) {
+      toast({ variant: 'destructive', title: 'Este negocio está archivado', description: 'Restáuralo antes de cambiar su estado o configuración.' });
+      return;
+    }
     setIsSaving(true);
-    updateDocumentNonBlocking(doc(db, "colmados", selectedStore.id), {
+    const now = new Date().toISOString();
+    try {
+    await updateDoc(doc(db, "colmados", selectedStore.id), {
       ...(selectedStore.rootColmadoId && selectedStore.rootColmadoId !== selectedStore.id ? {} : { branchLimit: Math.max(1, Math.floor(Number(editBranchLimit) || 1)) }),
       ...(!selectedStore.rootColmadoId || selectedStore.rootColmadoId === selectedStore.id ? { additionalBranchFee: Math.max(0, Number(additionalBranchFee) || 0) } : {}),
       name: editName,
@@ -342,6 +348,8 @@ export default function AdminSaaSPage() {
       slug: editSlug.toLowerCase().replace(/\s+/g, '-'),
       masterKey: editMasterKey,
       subscriptionStatus: editStatus,
+      subscriptionStatusCode: editStatus === 'Active' ? 'ACTIVO' : editStatus === 'Suspended' ? 'SUSPENDIDO' : editStatus === 'Pending' ? 'PENDIENTE' : 'PRUEBA',
+      ...(editStatus === 'Active' ? { isActive: true, suspensionNoticeEnabled: false, suspensionNoticeMessage: '', suspensionNoticeUpdatedAt: now } : {}),
       printerPaperWidth: editPrinterWidth,
       businessType: editBusinessType,
       pharmacyEnabled: editPharmacyEnabled,
@@ -362,30 +370,32 @@ export default function AdminSaaSPage() {
       ecf32SequenceEnd: Math.max(1, Number(editEcf32SequenceEnd) || 9999999999),
       ecfSequenceExpiry: editEcfSequenceExpiry,
       ...Object.fromEntries(EXTRA_ECF_TYPES.flatMap(type=>{const range=extraEcfRanges[type];return range?.next&&range?.end?[[`ecf${type}NextSequence`,Math.max(1,Number(range.next))],[`ecf${type}SequenceEnd`,Math.max(1,Number(range.end))],[`ecf${type}SequenceExpiry`,range.expiry]]:[]})),
-      updatedAt: new Date().toISOString()
+      updatedAt: now
     });
 
     if (!selectedStore.rootColmadoId || selectedStore.rootColmadoId === selectedStore.id) {
-      allColmados?.filter(store => store.id !== selectedStore.id && store.rootColmadoId === selectedStore.id)
-        .forEach(store => updateDocumentNonBlocking(doc(db, 'colmados', store.id), {
-          pharmacyEnabled: editPharmacyEnabled, updatedAt: new Date().toISOString()
-        }));
+      await Promise.all((allColmados || []).filter(store => store.id !== selectedStore.id && store.rootColmadoId === selectedStore.id && store.isDeleted !== true)
+        .map(store => updateDoc(doc(db, 'colmados', store.id), {
+          pharmacyEnabled: editPharmacyEnabled, updatedAt: now
+        })));
     }
 
     if (editOwnerEmail) {
-      getDocs(query(collection(db, "userProfiles"), where("email", "==", editOwnerEmail.toLowerCase()), limit(1)))
-        .then((snap) => {
-          if (!snap.empty) {
-            updateDocumentNonBlocking(doc(db, "userProfiles", snap.docs[0].id), {
+      const snap = await getDocs(query(collection(db, "userProfiles"), where("email", "==", editOwnerEmail.toLowerCase()), limit(1)));
+      if (!snap.empty) {
+            await updateDoc(doc(db, "userProfiles", snap.docs[0].id), {
               colmadoId: selectedStore.id,
-              isActive: editStatus !== 'Suspended'
+              ...(editStatus === 'Active' ? { isActive: true } : {})
             });
-          }
-        });
+      }
     }
 
-    toast({ title: "Cambios Guardados" });
-    setIsSaving(false);
+    toast({ title: "Cambios guardados", description: editStatus === 'Active' ? 'El bloqueo por pago se retiró de este negocio.' : undefined });
+    } catch (error) {
+      toast({ variant: 'destructive', title: 'No se pudieron guardar los cambios', description: error instanceof Error ? error.message : '' });
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const handleCreateBranch = async () => {

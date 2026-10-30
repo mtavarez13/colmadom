@@ -15,9 +15,10 @@ export async function POST(request:NextRequest){
   if(!tenantId)return NextResponse.json({error:'Falta el cliente.'},{status:400});
   await adminDb.runTransaction(async tx=>{
    const storeRef=adminDb.doc('colmados/'+tenantId),storeSnap=await tx.get(storeRef);if(!storeSnap.exists)throw new Error('NOT_FOUND');
+   if(storeSnap.data()?.isDeleted===true)throw new Error('ARCHIVED');
    const updates:any={updatedAt:now};let auditAction=action;
    if(action==='suspend')updates.subscriptionStatus='Suspended',updates.subscriptionStatusCode='SUSPENDIDO';
-   else if(action==='activate')updates.subscriptionStatus='Active',updates.subscriptionStatusCode='ACTIVO';
+   else if(action==='activate')Object.assign(updates,{subscriptionStatus:'Active',subscriptionStatusCode:'ACTIVO',isActive:true,suspensionNoticeEnabled:false,suspensionNoticeMessage:'',suspensionNoticeUpdatedAt:now});
    else if(action==='extend_trial'){const days=Math.min(90,Math.max(1,Number(body.days||7))),end=new Date(Math.max(Date.now(),Number(storeSnap.data()?.trialEndAtMillis||0))+days*86400000);updates.subscriptionStatus='Trial';updates.subscriptionStatusCode='PRUEBA';updates.trialEndDate=end.toISOString();updates.trialEndAtMillis=end.getTime();}
    else if(action==='change_plan')updates.planId=String(body.planId||'standard');
    else throw new Error('INVALID_ACTION');
@@ -26,6 +27,7 @@ export async function POST(request:NextRequest){
   });
   return NextResponse.json({ok:true});
  }catch(error){
+  if(error instanceof Error&&error.message==='ARCHIVED')return NextResponse.json({error:'El negocio está archivado y necesita restauración antes de reactivar su acceso.'},{status:409});
   if(error instanceof Error&&['NOT_FOUND','INVALID_ACTION'].includes(error.message))return NextResponse.json({error:'Solicitud inválida.'},{status:400});
   const f=apiError(error);return NextResponse.json({error:f.message},{status:f.status});
  }
