@@ -15,10 +15,10 @@ Elegir en el centro un canal Cloud API conectado y usar el nombre de una plantil
 Configurar una variable `CRON_SECRET` aleatoria de al menos 24 caracteres en Hostinger. Crear una tarea **Personalizado** cada cinco minutos con este comando (menos de 255 caracteres, límite de Hostinger):
 
 ```sh
-/opt/alt/alt-nodejs20/root/bin/node --env-file=/home/u115384107/domains/colmadom.hispaniolapay.com/hbuilds/config/.env -e 'fetch("https://colmadom.hispaniolapay.com/cron",{headers:{Authorization:"Bearer "+process.env.CRON_SECRET}}).then(console.log)'
+/opt/alt/alt-nodejs20/root/bin/node --env-file=/home/u115384107/domains/colmadom.hispaniolapay.com/hbuilds/config/.env -e 'fetch("https://colmadom.hispaniolapay.com/c",{headers:{x:process.env.CRON_SECRET}}).then(console.log)'
 ```
 
-La ruta `/cron` redirige internamente al procesador protegido. La clave se lee de las variables guardadas y no se escribe en el comando. El endpoint procesa hasta diez mensajes por ejecución. El centro muestra la última ejecución confirmada; también permite procesar pendientes manualmente con la sesión del administrador.
+La ruta `/c` redirige internamente al procesador protegido. Su nombre y encabezado cortos permiten cumplir el límite de Hostinger incluso después de escapar caracteres. La clave se lee de las variables guardadas y no se escribe en el comando. El endpoint procesa hasta diez mensajes por ejecución. El centro muestra la última ejecución confirmada; también permite procesar pendientes manualmente con la sesión del administrador.
 
 La cola usa un identificador por fecha y destinatario, reclamación transaccional y tres intentos con espera. Cuando faltan credenciales SMTP o un remitente de WhatsApp, espera una hora sin agotar los intentos. El historial incluye enviados, fallidos y omitidos. Como en cualquier envío externo, un corte de red después de que el proveedor acepte el mensaje y antes de registrar el resultado podría causar un reintento; revisar el historial si se sospecha un duplicado.
 

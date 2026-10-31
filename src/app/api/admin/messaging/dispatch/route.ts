@@ -6,7 +6,8 @@ export const runtime = 'nodejs';
 
 export async function GET(request: NextRequest) {
   const secret = process.env.CRON_SECRET;
-  if (!secret || secret.length < 24 || request.headers.get('authorization') !== `Bearer ${secret}`)
+  const suppliedSecret = request.headers.get('x') || request.headers.get('authorization')?.replace(/^Bearer /, '');
+  if (!secret || secret.length < 24 || suppliedSecret !== secret)
     return NextResponse.json({ error: 'No autorizado.' }, { status: 403 });
   try {
     const result = await processDueOwnerMessages(10);
