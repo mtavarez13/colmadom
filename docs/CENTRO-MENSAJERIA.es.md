@@ -12,7 +12,7 @@ Elegir en el centro un canal Cloud API conectado y usar el nombre de una plantil
 
 ## Programador
 
-Configurar una variable `CRON_SECRET` aleatoria de al menos 24 caracteres en Hostinger. Crear una tarea cada cinco minutos que invoque `GET https://colmadom.hispaniolapay.com/api/admin/messaging/dispatch` con la cabecera `Authorization: Bearer <CRON_SECRET>`. El endpoint procesa hasta diez mensajes por ejecución. El centro muestra la última ejecución confirmada; también permite procesar pendientes manualmente con la sesión del administrador.
+Configurar una variable `CRON_SECRET` aleatoria de al menos 24 caracteres en Hostinger. Crear una tarea **Node.js** cada cinco minutos con `scripts/messaging-cron.mjs` como archivo; Hostinger carga su `.env` sin escribir la clave en el comando. El script llama por HTTPS al endpoint del mismo dominio, que procesa hasta diez mensajes por ejecución. El centro muestra la última ejecución confirmada; también permite procesar pendientes manualmente con la sesión del administrador.
 
 La cola usa un identificador por fecha y destinatario, reclamación transaccional y tres intentos con espera. Cuando faltan credenciales SMTP o un remitente de WhatsApp, espera una hora sin agotar los intentos. El historial incluye enviados, fallidos y omitidos. Como en cualquier envío externo, un corte de red después de que el proveedor acepte el mensaje y antes de registrar el resultado podría causar un reintento; revisar el historial si se sospecha un duplicado.
 
