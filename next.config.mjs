@@ -1,4 +1,7 @@
 const nextConfig = {
+  async rewrites() {
+    return [{ source: '/cron', destination: '/api/admin/messaging/dispatch' }];
+  },
   ...(process.env.COLMADOM_DESKTOP_BUILD === '1'
     ? { output: 'standalone', distDir: '.next-desktop' }
     : {}),
