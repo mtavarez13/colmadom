@@ -41,6 +41,7 @@ export default function OnboardingPage() {
   const [fiscalEnabled, setFiscalEnabled] = useState(false);
   const [rnc, setRnc] = useState("");
   const [legalName, setLegalName] = useState("");
+  const [ownerMarketingConsent, setOwnerMarketingConsent] = useState(false);
   
   const [loading, setLoading] = useState(false);
   const [mounted, setMounted] = useState(false);
@@ -137,7 +138,7 @@ export default function OnboardingPage() {
       const response = await fetch('/api/onboarding', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + await user.getIdToken() },
-        body: JSON.stringify({ name, address, businessPhone, ownerPhone, province, municipality, ownerFullName, ownerCedula, businessType, fiscalEnabled, rnc, legalName })
+        body: JSON.stringify({ name, address, businessPhone, ownerPhone, province, municipality, ownerFullName, ownerCedula, businessType, fiscalEnabled, rnc, legalName, ownerMarketingConsent })
       });
       const result = await response.json();
       if (!response.ok && response.status < 500) throw new Error(result.error || 'No se pudo crear el negocio.');
@@ -145,7 +146,7 @@ export default function OnboardingPage() {
         const colmadoRef = doc(collection(db, 'colmados')), now = new Date(), trialEnd = new Date(now.getTime() + 20 * 86400000);
         const batch = writeBatch(db);
         batch.set(colmadoRef, { id: colmadoRef.id, code: 'CLM-' + Math.floor(1000 + Math.random() * 9000), ownerId: user.uid, name,
-          slug: slugify(name) + '-' + colmadoRef.id.slice(-4), address, phoneNumber: businessPhone.replace(/\D/g,''), businessPhone: businessPhone.replace(/\D/g,''), ownerPhone: ownerPhone.replace(/\D/g,''), province, municipality,
+          slug: slugify(name) + '-' + colmadoRef.id.slice(-4), address, phoneNumber: businessPhone.replace(/\D/g,''), businessPhone: businessPhone.replace(/\D/g,''), ownerPhone: ownerPhone.replace(/\D/g,''), province, municipality, ownerMarketingConsent,
           ownerEmail: user.email?.toLowerCase() || '', ownerFullName, ownerCedula, businessType, rootColmadoId: colmadoRef.id,
           branchLimit: 1, additionalBranchFee: 0, printerPaperWidth: '80mm', monthlyFee: 1500, subscriptionStatus: 'Trial',
           subscriptionStatusCode: 'PRUEBA', planId: 'standard', trialDays: 20, trialStartDate: now.toISOString(),
@@ -209,6 +210,11 @@ export default function OnboardingPage() {
             </div>
 
             <Separator className="opacity-10" />
+
+            <label className="flex items-start gap-3 rounded-2xl border p-4 text-sm">
+              <input type="checkbox" className="mt-1 h-4 w-4" checked={ownerMarketingConsent} onChange={event => setOwnerMarketingConsent(event.target.checked)} />
+              <span><strong>Recibir consejos y recomendaciones de Colmadom</strong><small className="block text-muted-foreground">Opcional. Puedes cambiar esta preferencia desde Ajustes en cualquier momento.</small></span>
+            </label>
 
             <div className="rounded-3xl border-2 border-primary/10 bg-primary/5 p-6 space-y-4">
               <label className="flex items-start gap-3 cursor-pointer">

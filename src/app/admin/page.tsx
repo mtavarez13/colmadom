@@ -222,6 +222,7 @@ export default function AdminSaaSPage() {
   const handleCreateStore = async () => {
     if (!storeName || !storePhone || !storeOwnerPhone || !storePassword || !db) return;
     setIsSaving(true);
+    try {
     const colmadoId = `colmado_${Math.random().toString(36).substr(2, 9)}`;
     const now = new Date();
     const trialEnd = new Date();
@@ -238,6 +239,8 @@ export default function AdminSaaSPage() {
       businessPhone: storePhone.replace(/\D/g, ""),
       ownerPhone: storeOwnerPhone.replace(/\D/g, ""),
       ownerEmail: ownerEmail || null,
+      ownerFullName: storeName,
+      ownerMarketingConsent: false,
       branchLimit: 1,
       additionalBranchFee: 0,
       rootColmadoId: colmadoId,
@@ -266,11 +269,12 @@ export default function AdminSaaSPage() {
       updatedAt: now.toISOString(),
     };
 
-    setDocumentNonBlocking(doc(db, "colmados", colmadoId), colmadoData, { merge: true });
+    const createBatch = writeBatch(db);
+    createBatch.set(doc(db, "colmados", colmadoId), colmadoData, { merge: true });
 
     if (ownerEmail) {
       const ownerId = `owner_${Date.now()}`;
-      setDocumentNonBlocking(doc(db, "userProfiles", ownerId), {
+      createBatch.set(doc(db, "userProfiles", ownerId), {
         id: ownerId,
         colmadoId,
         email: ownerEmail.toLowerCase(),
@@ -283,18 +287,22 @@ export default function AdminSaaSPage() {
         createdAt: now.toISOString()
       }, { merge: true });
     }
+    await createBatch.commit();
 
     if (user) {
       try {
-        const welcomeResponse = await fetch('/api/admin/send-welcome', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + await user.getIdToken() }, body: JSON.stringify({ ownerPhone: storeOwnerPhone, ownerName: storeName, name: storeName }) });
+        const welcomeResponse = await fetch('/api/admin/send-welcome', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + await user.getIdToken() }, body: JSON.stringify({ colmadoId, ownerPhone: storeOwnerPhone, ownerName: storeName, name: storeName }) });
         const welcome = await welcomeResponse.json();
         if (!welcomeResponse.ok) toast({ variant: 'destructive', title: 'Negocio creado; bienvenida pendiente', description: welcome.error });
+        else if (welcome.whatsapp === 'pending') toast({ title: 'Negocio creado; WhatsApp pendiente', description: welcome.detail });
       } catch { toast({ variant: 'destructive', title: 'Negocio creado; bienvenida pendiente', description: 'Puedes reenviar el mensaje cuando el canal de WhatsApp esté disponible.' }); }
     }
 
     toast({ title: "Colmado Registrado", description: initialStatus === 'Trial' ? 'Inicia con 20 días de prueba.' : 'Cuenta activa.' });
     setStoreName(""); setStorePhone(""); setStoreOwnerPhone(""); setStorePassword(""); setOwnerEmail(""); setStoreFiscalEnabled(false); setStoreRnc(''); setStoreLegalName('');
-    setIsSaving(false);
+    } catch (error) {
+      toast({ variant: 'destructive', title: 'No se pudo registrar el negocio', description: error instanceof Error ? error.message : '' });
+    } finally { setIsSaving(false); }
   };
 
   const handleOpenManagement = (store: any) => {
@@ -492,14 +500,15 @@ export default function AdminSaaSPage() {
 
   return (
     <div className="p-8 max-w-7xl mx-auto space-y-8">
-      <header className="flex justify-between items-center">
+      <header className="flex flex-wrap justify-between items-center gap-4">
         <div className="flex items-center gap-3">
           <ShieldAlert className="h-8 w-8 text-primary" />
           <h1 className="text-4xl font-black tracking-tight text-primary uppercase">SaaS Master</h1>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
         <Button asChild variant="outline" className="h-12 font-bold"><NextLink href="/admin/global-inventory"><Boxes className="mr-2 h-4 w-4" />Inventario general</NextLink></Button>
         <Button asChild variant="outline" className="h-12 font-bold"><NextLink href="/admin/subscriptions"><CreditCard className="mr-2 h-4 w-4" />Contabilidad SaaS · MRR</NextLink></Button>
+        <Button asChild variant="outline" className="h-12 font-bold"><NextLink href="/admin/messaging">Centro de mensajes y correo</NextLink></Button>
         <Button asChild variant="outline" className="h-12 font-bold"><NextLink href="/admin/payment-settings"><Settings className="mr-2 h-4 w-4" />Planes, módulos y farmacia</NextLink></Button>
         <Dialog>
           <DialogTrigger asChild><Button size="lg" className="gap-2 font-bold h-12 rounded-2xl shadow-xl bg-primary text-white"><Plus className="h-5 w-5" /> Registrar Nueva Unidad</Button></DialogTrigger>

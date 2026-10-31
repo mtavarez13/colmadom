@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { adminDb } from '@/lib/firebase-admin';
 import { apiError, requireIdentity } from '@/lib/server-auth';
 import { sendWhatsAppTemplate,sendWhatsAppText } from '@/lib/whatsapp-cloud';
+import { queueAutomaticOwnerMessages } from '@/lib/saas-messaging';
 export const runtime='nodejs';
 const clean=(value:unknown,max=120)=>String(value||'').trim().slice(0,max);
 const slugify=(value:string)=>value.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'');
@@ -17,7 +18,7 @@ export async function POST(request:NextRequest){
    if(!profile)throw new Error('PROFILE_REQUIRED');if(profile.colmadoId)return {colmadoId:profile.colmadoId,existing:true};
    const trialDays=Math.min(90,Math.max(1,Number(configSnap.data()?.trialDays||20))),now=new Date(),trialEnd=new Date(now.getTime()+trialDays*86400000),colmadoRef=adminDb.collection('colmados').doc();
    tx.create(colmadoRef,{id:colmadoRef.id,code:'CLM-'+Math.floor(1000+Math.random()*9000),ownerId:identity.uid,name,slug:slugify(name)+'-'+colmadoRef.id.slice(-4),
-    address:clean(body.address,250),phoneNumber:businessPhone,businessPhone,ownerPhone,province,municipality,ownerEmail:identity.email?.toLowerCase()||'',ownerFullName:clean(body.ownerFullName)||profile.firstName||'Dueño',
+    address:clean(body.address,250),phoneNumber:businessPhone,businessPhone,ownerPhone,province,municipality,ownerEmail:identity.email?.toLowerCase()||'',ownerFullName:clean(body.ownerFullName)||profile.firstName||'Dueño',ownerMarketingConsent:body.ownerMarketingConsent===true,
     ownerCedula:clean(body.ownerCedula,30),businessType:body.businessType==='Consignacion'?'Consignacion':'Standard',rootColmadoId:colmadoRef.id,branchLimit:1,
     additionalBranchFee:0,printerPaperWidth:'80mm',monthlyFee:Number(configSnap.data()?.defaultMonthlyFee||1500),subscriptionStatus:'Trial',subscriptionStatusCode:'PRUEBA',
     planId:String(configSnap.data()?.defaultPlanId||'standard'),trialDays,trialStartDate:now.toISOString(),trialEndDate:trialEnd.toISOString(),trialEndAtMillis:trialEnd.getTime(),
@@ -29,11 +30,13 @@ export async function POST(request:NextRequest){
    return {colmadoId:colmadoRef.id,trialDays,existing:false};
   });
   let welcomeWhatsapp={status:'pending',message:'No hay canal emisor configurado.'};
+  let scheduledMessages=0;
   if(!result.existing){
+   try{scheduledMessages=await queueAutomaticOwnerMessages(result.colmadoId,new Date().toISOString());}
+   catch(error){console.error('No se pudieron programar las plantillas del nuevo negocio',error);}
    try{
     const configured=process.env.WHATSAPP_WELCOME_CONNECTION_ID?.trim();
-    let senderId=configured||'';
-    if(!senderId){const connected=await adminDb.collection('whatsappConnections').where('status','==','Connected').limit(1).get();senderId=connected.docs[0]?.id||'';}
+    const senderId=configured||String((await adminDb.doc('platformConfig/messaging').get()).data()?.senderConnectionId||'');
     if(senderId){
       const template=process.env.WHATSAPP_WELCOME_TEMPLATE?.trim()||'colmadom_bienvenida',language=process.env.WHATSAPP_WELCOME_LANGUAGE?.trim()||'es';
       try{const sent=await sendWhatsAppTemplate(senderId,ownerPhone,template,language,[clean(body.ownerFullName)||'Propietario',name,String(result.trialDays||20)]);welcomeWhatsapp={status:'sent',message:sent.messageId};}
@@ -42,7 +45,7 @@ export async function POST(request:NextRequest){
    }catch(error){welcomeWhatsapp={status:'pending',message:error instanceof Error?error.message:'Envío pendiente'};}
    await adminDb.doc('colmados/'+result.colmadoId).set({welcomeWhatsappStatus:welcomeWhatsapp.status,welcomeWhatsappDetail:welcomeWhatsapp.message,welcomeWhatsappUpdatedAt:new Date().toISOString()},{merge:true});
   }
-  return NextResponse.json({...result,welcomeWhatsapp});
+  return NextResponse.json({...result,welcomeWhatsapp,scheduledMessages});
  }catch(error){
   if(error instanceof Error&&error.message==='PROFILE_REQUIRED')return NextResponse.json({error:'No encontramos el perfil de registro.'},{status:409});
   const failure=apiError(error);return NextResponse.json({error:failure.message},{status:failure.status});

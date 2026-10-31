@@ -9,6 +9,7 @@ import {
   Beer, 
   ClipboardList, 
   MessageSquare, 
+  Mail,
   Navigation, 
   Package, 
   Users, 
@@ -362,6 +363,11 @@ export function AppSidebar() {
 
       <SidebarFooter className="shrink-0 p-2 border-t-2">
         <SidebarMenu>
+          {isPlatformAdmin && <SidebarMenuItem>
+            <SidebarMenuButton asChild isActive={pathname === '/admin/messaging'} tooltip="Mensajes SaaS" className="h-10 rounded-xl">
+              <Link href="/admin/messaging" className="flex items-center gap-3"><Mail className="h-5 w-5"/><span className="text-sm font-bold">Mensajes y correo</span></Link>
+            </SidebarMenuButton>
+          </SidebarMenuItem>}
           {isPlatformAdmin ? (
             <SidebarMenuItem>
               <SidebarMenuButton asChild isActive={pathname === '/admin'} tooltip="SaaS Master" className={cn("h-11 rounded-xl", pathname === '/admin' ? "bg-accent text-white" : "hover:bg-accent/5")}>

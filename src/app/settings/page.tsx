@@ -108,6 +108,8 @@ export default function SettingsPage() {
   const [colAddress, setColAddress] = useState("");
   const [colOwnerName, setColOwnerName] = useState("");
   const [colOwnerCedula, setColOwnerCedula] = useState("");
+  const [ownerMarketingConsent, setOwnerMarketingConsent] = useState(false);
+  const [savingMarketingConsent, setSavingMarketingConsent] = useState(false);
   const [colPhone, setColPhone] = useState("");
   const [colLat, setColLat] = useState("");
   const [colLng, setColLng] = useState("");
@@ -166,6 +168,25 @@ export default function SettingsPage() {
     return doc(db, "colmados", profile.colmadoId);
   }, [db, profile?.colmadoId]);
   const { data: colmado } = useDoc(colmadoRef);
+  const rootRef = useMemoFirebase(() => colmado?.rootColmadoId && colmado.rootColmadoId !== colmado.id
+    ? doc(db, 'colmados', colmado.rootColmadoId) : null, [db, colmado?.rootColmadoId, colmado?.id]);
+  const { data: rootColmado } = useDoc(rootRef);
+  useEffect(() => { setOwnerMarketingConsent((rootColmado || colmado)?.ownerMarketingConsent === true); }, [rootColmado, colmado]);
+
+  const updateMarketingConsent = async () => {
+    if (!user) return;
+    setSavingMarketingConsent(true);
+    try {
+      const response = await fetch('/api/messaging/consent', { method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${await user.getIdToken()}` },
+        body: JSON.stringify({ enabled: ownerMarketingConsent }) });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || 'No se pudo guardar.');
+      toast({ title: 'Preferencia de mensajes guardada' });
+    } catch (error) {
+      toast({ variant: 'destructive', title: 'No se pudo guardar la preferencia', description: error instanceof Error ? error.message : '' });
+    } finally { setSavingMarketingConsent(false); }
+  };
 
   useEffect(() => {
     if (colmado) {
@@ -482,6 +503,11 @@ export default function SettingsPage() {
               </div>
 
               <div className="pt-6">
+                {canManageStaff && <div className="mb-6 rounded-2xl border border-purple-200 bg-purple-50/50 p-4 space-y-3">
+                  <label className="flex items-start gap-3 text-sm"><input type="checkbox" className="mt-1 h-4 w-4" checked={ownerMarketingConsent} onChange={event => setOwnerMarketingConsent(event.target.checked)} />
+                    <span><strong>Recibir consejos y recomendaciones de Colmadom Cloud</strong><small className="block text-muted-foreground">Opcional. Esta preferencia se aplica al dueño de todas las sucursales.</small></span></label>
+                  <Button type="button" variant="outline" disabled={savingMarketingConsent} onClick={updateMarketingConsent}>Guardar preferencia de mensajes</Button>
+                </div>}
                 <Button onClick={handleUpdate} className="w-full h-16 text-xl font-black rounded-2xl shadow-xl bg-primary gap-2" disabled={isSaving}>
                   {isSaving ? <Loader2 className="animate-spin h-6 w-6" /> : <Save className="h-6 w-6" />}
                   Guardar Cambios de Perfil
