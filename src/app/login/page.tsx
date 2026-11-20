@@ -11,6 +11,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
+import { LoginAmbient } from "./login-ambient";
 
 const SUPER_ADMINS = new Set(["admin@colmadom.com","martin.tavarez.gomez@gmail.com","tavarezgomezmartin@gmail.com"]);
 
@@ -92,8 +93,8 @@ export default function LoginPage() {
     catch{toast({variant:"destructive",title:"No se pudo enviar",description:"Comprueba el correo e inténtalo otra vez."});}
   }
   if(isUserLoading)return <div className="min-h-svh grid place-items-center"><Loader2 className="animate-spin text-primary"/></div>;
-  return <main className="min-h-svh overflow-y-auto grid place-items-center bg-gradient-to-br from-black via-zinc-950 to-purple-950 p-4"><div className="w-full max-w-sm space-y-3">
-    <div className="text-center"><div className="mx-auto h-12 w-12 rounded-xl bg-primary text-white grid place-items-center shadow-lg"><ShoppingCart/></div><h1 className="mt-2 text-2xl font-black text-primary">COLMADOM CLOUD</h1><p className="text-xs font-bold text-muted-foreground">Gestión para tu negocio</p></div>
+  return <main className="relative isolate min-h-svh overflow-hidden grid place-items-center bg-[radial-gradient(circle_at_50%_0%,#4c1d95_0%,#181025_42%,#09090b_100%)] p-4"><div className="absolute inset-0 bg-[radial-gradient(circle_at_10%_80%,rgba(249,115,22,0.14),transparent_35%),radial-gradient(circle_at_90%_20%,rgba(168,85,247,0.18),transparent_40%)]" aria-hidden="true"/><div className="relative z-10 w-full max-w-sm space-y-3 py-4">
+    <div className="text-center"><div className="mx-auto h-12 w-12 rounded-xl bg-primary text-white grid place-items-center shadow-lg"><ShoppingCart/></div><h1 className="mt-2 text-2xl font-black text-white">COLMADOM <span className="text-purple-300">CLOUD</span></h1><p className="text-xs font-bold text-purple-100/80">Gestión para tu negocio</p><LoginAmbient/></div>
     <Card className="rounded-2xl border border-purple-400/30 shadow-2xl shadow-purple-900/40"><CardHeader className="px-5 pt-5 pb-2"><CardTitle>{accountantMode?'Registro exclusivo para contadores':register?"Crear una cuenta":"Iniciar sesión"}</CardTitle><CardDescription>{accountantMode?'Accede únicamente con tu cuenta de Google. El administrador habilitará el módulo de inventarios independientes.':register?"Comienza tu período de prueba.":"Accede a tu panel."}</CardDescription></CardHeader>
       <CardContent className="p-5 pt-3 space-y-3">{!accountantMode&&<form onSubmit={submit} className="space-y-3">
         {register&&<div><Label>Nombre</Label><div className="relative"><User className="absolute left-3 top-3 h-4 w-4 text-muted-foreground"/><Input className="h-10 pl-10" value={name} onChange={e=>setName(e.target.value)} required/></div></div>}

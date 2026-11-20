@@ -1,0 +1,99 @@
+.ambient {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.particle {
+  position: absolute;
+  top: -80px;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  min-width: 55px;
+  min-height: 55px;
+  justify-content: center;
+  border: 1px solid currentColor;
+  border-radius: 16px;
+  background: rgba(24, 15, 48, .9);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, .4), 0 0 20px currentColor;
+  backdrop-filter: blur(8px);
+  opacity: 0;
+  animation-name: fall;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+}
+
+.fiscal { color: #b7f5d0; font-size: 11px; padding: 0 7px; }
+.money { color: #facc15; }
+.instagram { color: #f9a8d4; }
+
+.badges {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 7px;
+  margin-top: 10px;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 29px;
+  padding: 4px 9px;
+  border: 1px solid rgba(255, 255, 255, .18);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, .09);
+  color: #f8fafc;
+  font-size: 10px;
+  font-weight: 700;
+  white-space: nowrap;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, .17);
+  animation: dropIn .7s both, float 4s ease-in-out 1s infinite;
+}
+
+.badgeFiscal { animation-delay: .06s, .76s; }
+.badgeMoney { color: #fde68a; animation-delay: .2s, .9s; }
+.badgeInstagram { color: #fbcfe8; animation-delay: .34s, 1.04s; }
+.badge svg { animation: symbolDrop 4s cubic-bezier(.2,.8,.2,1) infinite; }
+.badgeMoney svg { animation-delay: .8s; }
+.badgeInstagram svg { animation-delay: 1.6s; }
+.badgeInstagram:hover { background: rgba(236, 72, 153, .25); }
+.badgeInstagram:focus-visible { outline: 2px solid #f9a8d4; outline-offset: 2px; }
+
+@keyframes fall {
+  0% { transform: translate3d(-12px, -10vh, 0) rotate(-18deg); opacity: 0; }
+  10% { opacity: .9; }
+  85% { opacity: .9; }
+  100% { transform: translate3d(28px, 115vh, 0) rotate(22deg); opacity: 0; }
+}
+
+@keyframes dropIn {
+  from { transform: translateY(-30px) scale(.92); opacity: 0; }
+  to { transform: translateY(0) scale(1); opacity: 1; }
+}
+
+@keyframes float {
+  0%, 100% { translate: 0 0; }
+  50% { translate: 0 -3px; }
+}
+
+@keyframes symbolDrop {
+  0% { transform: translateY(-18px) rotate(-12deg); opacity: 0; }
+  18% { transform: translateY(3px) rotate(3deg); opacity: 1; }
+  26% { transform: translateY(-2px) rotate(0); }
+  34%, 100% { transform: translateY(0); opacity: 1; }
+}
+
+@media (max-width: 640px) {
+  .particle:nth-child(2), .particle:nth-child(3) { display: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .particle { display: none; }
+  .badge { animation: none; }
+  .badge svg { animation: none; }
+}
