@@ -110,6 +110,8 @@ import { productBarcodes } from '@/lib/shared-catalog';
 import { SaasStoreIntegrations } from '@/components/saas-store-integrations';
 import { SaasRecargasAdmin } from '@/components/saas-recargas-admin';
 import { SaasUsersManager } from '@/components/saas-users-manager';
+import { SaasStoreOwners } from '@/components/saas-store-owners';
+import { SaasInventoryReset } from '@/components/saas-inventory-reset';
 import { prorate } from '@/lib/saas-billing';
 
 export const dynamic = 'force-dynamic';
@@ -548,6 +550,8 @@ export default function AdminSaaSPage() {
       </header>
 
       <RncDatasetAdminCard />
+      <SaasStoreOwners stores={allColmados || []} />
+      <SaasInventoryReset stores={allColmados || []} />
       <SaasUsersManager />
 
       <Card className="rounded-[2rem] border-2 border-blue-100 shadow-xl overflow-hidden">
