@@ -94,6 +94,7 @@ const PRODUCT_CATEGORIES = [
 ];
 
 const UNIT_TYPES = ["un", "lb", "fardo", "galón", "onza", "caja", "litro", "botella"];
+type ComboItemDraft = { id: string; name: string; quantity: string };
 
 export default function InventoryPage() {
   const { user } = useUser();
@@ -134,7 +135,8 @@ export default function InventoryPage() {
   
   // Combo/Extra States
   const [isCombo, setIsCombo] = useState(false);
-  const [comboItems, setComboItems] = useState<{ id: string; name: string; quantity: number }[]>([]);
+  const [comboItems, setComboItems] = useState<ComboItemDraft[]>([]);
+  const [comboSearch, setComboSearch] = useState("");
   const [isExtra, setIsExtra] = useState(false);
   const [sourceProductId, setSourceProductId] = useState("");
   const [unitsToDiscount, setUnitsToDiscount] = useState("1");
@@ -179,6 +181,15 @@ export default function InventoryPage() {
   const sharedImagesQuery = useMemoFirebase(() => collection(db, 'sharedCatalogImages'), [db]);
   const { data: sharedImages, error: sharedImagesError } = useCollection(sharedImagesQuery, { permissionErrorIsLocal: true });
   const imageByBarcode = useMemo(() => Object.fromEntries((sharedImages || []).map(item => [item.id, item.imageUrl])), [sharedImages]);
+  const availableComboProducts = useMemo(() => {
+    const search = comboSearch.trim().toLocaleLowerCase();
+    if (!search) return [];
+    return (products || []).filter(product =>
+      product.id !== editingProduct?.id && !product.isCombo && !product.isExtra && product.isActive !== false && product.isDeleted !== true &&
+      !comboItems.some(item => item.id === product.id) &&
+      (product.name?.toLocaleLowerCase().includes(search) || productBarcodes(product).some(barcode => barcode.includes(search)))
+    ).slice(0, 12);
+  }, [products, editingProduct?.id, comboItems, comboSearch]);
 
   useEffect(() => {
     if (!products || !sharedImages || !profile?.colmadoId) return;
@@ -222,6 +233,20 @@ export default function InventoryPage() {
 
   const executeSaveProduct = async () => {
     if (!db || !profile?.colmadoId || !newName || !newPrice) return;
+    if (isCombo) {
+      if (!comboItems.length) {
+        toast({ variant: 'destructive', title: 'Combo sin productos', description: 'Agrega al menos un producto del inventario.' });
+        return;
+      }
+      if (comboItems.length > 80) {
+        toast({ variant: 'destructive', title: 'Combo demasiado grande', description: 'Elige hasta 80 productos para este combo.' });
+        return;
+      }
+      if (comboItems.some(item => !Number.isFinite(Number(item.quantity)) || Number(item.quantity) <= 0 || !products?.some(product => product.id === item.id && !product.isCombo && !product.isExtra && product.isActive !== false && product.isDeleted !== true))) {
+        toast({ variant: 'destructive', title: 'Revisa el combo', description: 'Cada componente debe existir en el inventario y tener una cantidad mayor que cero.' });
+        return;
+      }
+    }
     setIsSaving(true);
     const productId = editingProduct?.id || `p_${Date.now()}`;
     const now = new Date().toISOString();
@@ -245,7 +270,7 @@ export default function InventoryPage() {
       minStockLevel: Number(newMinStockLevel) || 5,
       imageUrl: newImageUrl || "",
       isCombo,
-      comboItems: isCombo ? comboItems : [],
+      comboItems: isCombo ? comboItems.map(item => ({ id: item.id, name: products?.find(product => product.id === item.id)?.name || item.name, quantity: Number(item.quantity) })) : [],
       isExtra,
       sourceProductId: isExtra ? sourceProductId : "",
       unitsToDiscount: isExtra ? (Number(unitsToDiscount) || 1) : 1,
@@ -289,8 +314,9 @@ export default function InventoryPage() {
     setNewIsBreakdownAllowed(!!product.isBreakdownAllowed);
     setNewMinStockLevel(product.minStockLevel?.toString() || "5");
     setNewImageUrl(product.imageUrl || "");
-    setIsCombo(!!product.isCombo);
-    setComboItems(product.comboItems || []);
+    setIsCombo(!!product.isCombo || (Array.isArray(product.comboItems) && product.comboItems.length > 0));
+    setComboItems(Array.isArray(product.comboItems) ? product.comboItems.map((item: any) => ({ id: String(item.id || ''), name: String(item.name || ''), quantity: String(item.quantity ?? 1) })) : []);
+    setComboSearch("");
     setIsExtra(!!product.isExtra);
     setSourceProductId(product.sourceProductId || "");
     setUnitsToDiscount(product.unitsToDiscount?.toString() || "1");
@@ -346,7 +372,7 @@ export default function InventoryPage() {
     setNewName(""); setNewUnit("un"); setNewStock(""); setNewCost(""); setNewPrice(""); setNewItbisRate("0");
     setNewCategory("Alimentos Básicos"); setNewIsBreakdownAllowed(false);
     setNewMinStockLevel("5"); setNewImageUrl("");
-    setIsCombo(false); setComboItems([]); setIsExtra(false); setSourceProductId("");
+    setIsCombo(false); setComboItems([]); setComboSearch(""); setIsExtra(false); setSourceProductId("");
     setShowExtraBarcodes(false);
   };
 
@@ -818,7 +844,7 @@ export default function InventoryPage() {
                           <Layers className="h-5 w-5 text-primary" />
                           <Label className="font-black text-xs uppercase text-primary tracking-widest">Configuración de Combos</Label>
                         </div>
-                        <div className="p-4 bg-muted/10 rounded-2xl flex items-center space-x-3 border-2 border-transparent hover:border-primary/20 transition-all cursor-pointer" onClick={() => setIsCombo(!isCombo)}>
+                        <div className="p-4 bg-muted/10 rounded-2xl flex items-center space-x-3 border-2 border-transparent hover:border-primary/20 transition-all">
                           <Checkbox id="isCombo" checked={isCombo} onCheckedChange={(val) => setIsCombo(!!val)} className="h-6 w-6 rounded-lg" />
                           <div className="flex flex-col">
                              <label htmlFor="isCombo" className="text-sm font-black uppercase text-primary cursor-pointer">Este producto es un Combo</label>
@@ -840,6 +866,38 @@ export default function InventoryPage() {
                         </div>
                       </div>
                     </div>
+                    {isCombo && <div className="rounded-2xl border-2 border-primary/20 bg-primary/5 p-5 space-y-5">
+                      <div>
+                        <h3 className="font-black text-primary">Productos que componen el combo</h3>
+                        <p className="text-sm text-muted-foreground">Indica cuántas unidades de cada producto se descontarán al vender un combo.</p>
+                      </div>
+                      {comboItems.length > 0 ? <div className="space-y-2">
+                        {comboItems.map(item => {
+                          const component = products?.find(product => product.id === item.id);
+                          const name = component?.name || item.name || item.id;
+                          return <div key={item.id} className={`flex flex-wrap items-center gap-3 rounded-xl border bg-white p-3 ${component ? '' : 'border-amber-400'}`}>
+                            <div className="min-w-0 flex-1">
+                              <p className="font-bold text-primary break-words">{name}</p>
+                              <p className="text-xs text-muted-foreground">{component ? `${component.barcode || 'Sin código'} · Stock: ${Number(component.quantityInStock || 0).toLocaleString()}` : 'Este producto ya no está en el inventario.'}</p>
+                            </div>
+                            <div className="w-28 space-y-1">
+                              <Label htmlFor={`combo-quantity-${item.id}`} className="text-xs">Cantidad</Label>
+                              <Input id={`combo-quantity-${item.id}`} type="number" min="0.01" step="any" inputMode="decimal" value={item.quantity} onChange={event => setComboItems(current => current.map(entry => entry.id === item.id ? { ...entry, quantity: event.target.value } : entry))} />
+                            </div>
+                            <Button type="button" variant="ghost" size="icon" aria-label={`Quitar ${name} del combo`} title="Quitar del combo" onClick={() => setComboItems(current => current.filter(entry => entry.id !== item.id))}><Trash2 className="h-4 w-4" /></Button>
+                          </div>;
+                        })}
+                      </div> : <p className="rounded-xl border border-dashed bg-white p-4 text-sm text-muted-foreground">Este combo todavía no tiene productos. Busca uno para agregarlo.</p>}
+                      <div className="space-y-2">
+                        <Label htmlFor="combo-product-search" className="font-bold">Agregar producto del inventario</Label>
+                        <div className="relative"><Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"/><Input id="combo-product-search" value={comboSearch} onChange={event => setComboSearch(event.target.value)} placeholder="Buscar por nombre o código de barras" className="pl-9 bg-white" /></div>
+                        {comboSearch.trim() && <div className="max-h-56 overflow-y-auto rounded-xl border bg-white p-1">
+                          {availableComboProducts.length ? availableComboProducts.map(product => <button key={product.id} type="button" className="flex w-full items-center justify-between gap-3 rounded-lg p-3 text-left hover:bg-primary/5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary" onClick={() => { setComboItems(current => [...current, { id: product.id, name: product.name || product.id, quantity: '1' }]); setComboSearch(''); }}>
+                            <span className="min-w-0"><span className="block font-semibold text-primary">{product.name}</span><span className="block text-xs text-muted-foreground">{product.barcode || 'Sin código'} · Stock: {Number(product.quantityInStock || 0).toLocaleString()}</span></span><Plus className="h-4 w-4 shrink-0"/>
+                          </button>) : <p className="p-3 text-sm text-muted-foreground">No hay productos disponibles con esa búsqueda.</p>}
+                        </div>}
+                      </div>
+                    </div>}
                   </div>
                   <ScrollBar orientation="vertical" />
                 </ScrollArea>
